@@ -17,10 +17,11 @@ gate, daily USD value, and the root-proportion alpha injection cap.
 
 - Keep the main product surface in `app/page.tsx` and its styles in
   `app/globals.css`.
-- Keep bundled snapshot constants and subnet records in
-  `app/emission-data.ts`.
-- `app/api/taostats/validate/route.ts` is intentionally stateless and may only
-  relay a supplied credential to `https://mcp.taostats.io`.
+- Keep bundled fallback constants and subnet records in `app/emission-data.ts`.
+- Keep network-wide share calculations in `app/emission-model.ts` and live
+  TaoStats response normalization in `app/taostats-snapshot.ts`.
+- `app/api/taostats/snapshot/route.ts` is intentionally stateless and may only
+  relay a supplied credential to documented routes on `https://api.taostats.io`.
 - Preserve the `sites()` Vite plugin and Cloudflare Worker-compatible ESM
   output.
 
@@ -31,6 +32,7 @@ gate, daily USD value, and the root-proportion alpha injection cap.
 - API keys entered in the page must remain in React memory only.
 - The validation route must not echo, cache, persist, or log credentials.
 - Do not add browser storage for credentials.
+- Never return the credential or raw authorization failures to the browser.
 
 ## Model invariants
 
@@ -38,6 +40,10 @@ gate, daily USD value, and the root-proportion alpha injection cap.
   bidirectionally linked.
 - Maintain the documented normalization order: EMA demand share, miner-burn
   scaling, Hill gate, then enabled-subnet redistribution.
+- Build a live scenario from the same request's subnet, pool, pruning/moving
+  price, and TAO-price feeds. Never mix historical EMA values with live flags.
+- Hold the fetched rank-32 gate midpoint fixed while a user moves a scenario
+  slider; a refresh may derive a new midpoint from the refreshed network.
 - Compute capped alpha injection as
   `min(tao_in / spot_price, root_proportion * alpha_emission_rate)`.
 - Use 7,200 blocks per day for 12-second block modelling unless the network

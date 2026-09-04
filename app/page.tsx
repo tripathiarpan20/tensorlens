@@ -4,84 +4,37 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   BLOCK_EMISSION_TAO,
   BLOCKS_PER_DAY,
-  EMA_CAPTURE,
-  GATE_BAR,
-  GATE_EXPONENT,
-  LIVE_BLOCK,
-  LIVE_CAPTURE,
+  EMA_CAPTURE as FALLBACK_EMA_CAPTURE,
+  GATE_BAR as FALLBACK_GATE_BAR,
+  GATE_EXPONENT as FALLBACK_GATE_EXPONENT,
+  LIVE_BLOCK as FALLBACK_LIVE_BLOCK,
+  LIVE_CAPTURE as FALLBACK_LIVE_CAPTURE,
   MINER_FRACTION,
-  SUBNETS,
-  TAO_PRICE_CAPTURE,
-  TAO_USD,
+  SUBNETS as FALLBACK_SUBNETS,
+  TAO_PRICE_CAPTURE as FALLBACK_TAO_PRICE_CAPTURE,
+  TAO_USD as FALLBACK_TAO_USD,
   type SubnetPoint,
 } from "./emission-data";
+import { alphaEmissionRate, calculateTaoShare, solveBurnForShare } from "./emission-model";
+import type { LiveSnapshot } from "./taostats-snapshot";
 
 type SurfaceMode = "difference" | "alpha";
 
-const enabledSubnets = SUBNETS.filter((subnet) => subnet.emissionEnabled);
-
-function alphaEmissionRate(totalAlpha: number) {
-  let rate = 1;
-  let threshold = 10_500_000;
-  while (totalAlpha >= threshold && rate > 1 / 1024) {
-    rate /= 2;
-    threshold = 21_000_000 - (21_000_000 - threshold) / 2;
-  }
-  return rate;
-}
-
-function calculateTaoShare(selectedNetuid: number, selectedBurn: number) {
-  const emaTotal = SUBNETS.reduce((sum, subnet) => sum + subnet.emaPrice, 0);
-  const adjusted = SUBNETS.map((subnet) => {
-    const burn = subnet.netuid === selectedNetuid ? selectedBurn : subnet.minerBurned;
-    return {
-      subnet,
-      weight: (subnet.emaPrice / emaTotal) * (1 - Math.min(1, Math.max(0, burn))),
-    };
-  });
-  const adjustedTotal = adjusted.reduce((sum, item) => sum + item.weight, 0);
-  const gated = adjusted.map((item) => {
-    const share = adjustedTotal > 0 ? item.weight / adjustedTotal : 0;
-    const gate = share > 0 ? 1 / (1 + Math.pow(GATE_BAR / share, GATE_EXPONENT)) : 0;
-    return { ...item, gated: share * gate };
-  });
-  const gatedTotal = gated.reduce((sum, item) => sum + item.gated, 0);
-  const normalized = gated.map((item) => ({
-    ...item,
-    final: gatedTotal > 0 ? item.gated / gatedTotal : 0,
-  }));
-  const enabledTotal = normalized.reduce(
-    (sum, item) => sum + (item.subnet.emissionEnabled ? item.final : 0),
-    0,
-  );
-  const selected = normalized.find((item) => item.subnet.netuid === selectedNetuid);
-  return selected?.subnet.emissionEnabled && enabledTotal > 0 ? selected.final / enabledTotal : 0;
-}
-
-function solveBurnForShare(netuid: number, targetShare: number) {
-  let low = 0;
-  let high = 1;
-  const highShare = calculateTaoShare(netuid, low);
-  if (targetShare >= highShare) return 0;
-  if (targetShare <= calculateTaoShare(netuid, high)) return 1;
-  for (let i = 0; i < 48; i++) {
-    const mid = (low + high) / 2;
-    const share = calculateTaoShare(netuid, mid);
-    if (share > targetShare) low = mid;
-    else high = mid;
-  }
-  return (low + high) / 2;
-}
-
-function surfaceValue(mode: SurfaceMode, subnet: SubnetPoint, burn: number, taoShare: number) {
+function surfaceValue(
+  mode: SurfaceMode,
+  subnet: SubnetPoint,
+  burn: number,
+  taoShare: number,
+  taoUsdRate: number,
+) {
   const alphaRate = alphaEmissionRate(subnet.totalAlpha);
   const taoPerBlock = taoShare * BLOCK_EMISSION_TAO;
   if (mode === "alpha") {
     return Math.min(taoPerBlock / Math.max(subnet.spotPrice, 1e-9), subnet.rootProportion * alphaRate) * BLOCKS_PER_DAY;
   }
   const minerUsd =
-    MINER_FRACTION * (1 - burn) * alphaRate * subnet.spotPrice * TAO_USD * BLOCKS_PER_DAY;
-  const taoUsd = taoPerBlock * TAO_USD * BLOCKS_PER_DAY;
+    MINER_FRACTION * (1 - burn) * alphaRate * subnet.spotPrice * taoUsdRate * BLOCKS_PER_DAY;
+  const taoUsd = taoPerBlock * taoUsdRate * BLOCKS_PER_DAY;
   return minerUsd - taoUsd;
 }
 
@@ -112,12 +65,20 @@ function shortDate(value: string) {
 
 function Surface3D({
   mode,
+  subnets,
+  gateBar,
+  gateExponent,
+  taoUsdRate,
   subnet,
   burn,
   share,
   maxShare,
 }: {
   mode: SurfaceMode;
+  subnets: SubnetPoint[];
+  gateBar: number;
+  gateExponent: number;
+  taoUsdRate: number;
   subnet: SubnetPoint;
   burn: number;
   share: number;
@@ -158,7 +119,7 @@ function Surface3D({
     for (let yi = 0; yi <= steps; yi++) {
       values[yi] = [];
       for (let xi = 0; xi <= steps; xi++) {
-        const value = surfaceValue(mode, subnet, xi / steps, (yi / steps) * maxShare);
+        const value = surfaceValue(mode, subnet, xi / steps, (yi / steps) * maxShare, taoUsdRate);
         values[yi][xi] = value;
         minValue = Math.min(minValue, value);
         maxValue = Math.max(maxValue, value);
@@ -226,8 +187,8 @@ function Surface3D({
     ctx.beginPath();
     for (let i = 0; i <= 80; i++) {
       const pathBurn = i / 80;
-      const pathShare = calculateTaoShare(subnet.netuid, pathBurn);
-      const pathValue = surfaceValue(mode, subnet, pathBurn, pathShare);
+      const pathShare = calculateTaoShare(subnets, gateBar, gateExponent, subnet.netuid, pathBurn);
+      const pathValue = surfaceValue(mode, subnet, pathBurn, pathShare, taoUsdRate);
       const point = project(pathBurn, maxShare ? pathShare / maxShare : 0, pathValue);
       if (i === 0) ctx.moveTo(point.x, point.y);
       else ctx.lineTo(point.x, point.y);
@@ -239,7 +200,7 @@ function Surface3D({
     ctx.stroke();
     ctx.shadowBlur = 0;
 
-    const markerValue = surfaceValue(mode, subnet, burn, share);
+    const markerValue = surfaceValue(mode, subnet, burn, share, taoUsdRate);
     const marker = project(burn, maxShare ? share / maxShare : 0, markerValue);
     ctx.beginPath();
     ctx.arc(marker.x, marker.y, 7, 0, Math.PI * 2);
@@ -253,7 +214,7 @@ function Surface3D({
     ctx.strokeStyle = mode === "difference" ? "#ff3f91" : "#d9ff43";
     ctx.lineWidth = 1;
     ctx.stroke();
-  }, [burn, maxShare, mode, share, sizeTick, subnet, view]);
+  }, [burn, gateBar, gateExponent, maxShare, mode, share, sizeTick, subnet, subnets, taoUsdRate, view]);
 
   const resetView = () => setView({ yaw: -0.72, pitch: 0.92, zoom: 1 });
 
@@ -352,29 +313,40 @@ function Slider({
 
 export default function Home() {
   const [selectedNetuid, setSelectedNetuid] = useState(4);
+  const [snapshot, setSnapshot] = useState<LiveSnapshot | null>(null);
+  const modelSubnets = snapshot?.subnets ?? FALLBACK_SUBNETS;
+  const enabledSubnets = useMemo(
+    () => modelSubnets.filter((subnet) => subnet.emissionEnabled),
+    [modelSubnets],
+  );
+  const gateBar = snapshot?.gateBar ?? FALLBACK_GATE_BAR;
+  const gateExponent = snapshot?.gateExponent ?? FALLBACK_GATE_EXPONENT;
+  const taoUsdRate = snapshot?.taoUsd ?? FALLBACK_TAO_USD;
   const selectedSubnet = useMemo(
-    () => SUBNETS.find((subnet) => subnet.netuid === selectedNetuid) ?? SUBNETS[3],
-    [selectedNetuid],
+    () => modelSubnets.find((subnet) => subnet.netuid === selectedNetuid)
+      ?? enabledSubnets[0]
+      ?? modelSubnets[0],
+    [enabledSubnets, modelSubnets, selectedNetuid],
   );
   const [burnPercent, setBurnPercent] = useState(selectedSubnet.minerBurned * 100);
   const [apiKey, setApiKey] = useState("");
   const [showApiKey, setShowApiKey] = useState(false);
-  const [apiKeyStatus, setApiKeyStatus] = useState<"idle" | "checking" | "valid" | "invalid">("idle");
-
-  useEffect(() => {
-    setBurnPercent(selectedSubnet.minerBurned * 100);
-  }, [selectedSubnet]);
+  const [apiKeyStatus, setApiKeyStatus] = useState<"idle" | "loading" | "live" | "invalid">("idle");
+  const [apiKeyMessage, setApiKeyMessage] = useState("");
 
   const burn = burnPercent / 100;
-  const taoShare = calculateTaoShare(selectedSubnet.netuid, burn);
-  const maxShare = Math.max(calculateTaoShare(selectedSubnet.netuid, 0), 0.0001);
+  const taoShare = calculateTaoShare(modelSubnets, gateBar, gateExponent, selectedSubnet.netuid, burn);
+  const maxShare = Math.max(
+    calculateTaoShare(modelSubnets, gateBar, gateExponent, selectedSubnet.netuid, 0),
+    0.0001,
+  );
   const sharePercent = taoShare * 100;
   const maxSharePercent = maxShare * 100;
   const alphaRate = alphaEmissionRate(selectedSubnet.totalAlpha);
   const taoPerBlock = taoShare * BLOCK_EMISSION_TAO;
   const minerUsd =
-    MINER_FRACTION * (1 - burn) * alphaRate * selectedSubnet.spotPrice * TAO_USD * BLOCKS_PER_DAY;
-  const taoUsd = taoPerBlock * TAO_USD * BLOCKS_PER_DAY;
+    MINER_FRACTION * (1 - burn) * alphaRate * selectedSubnet.spotPrice * taoUsdRate * BLOCKS_PER_DAY;
+  const taoUsd = taoPerBlock * taoUsdRate * BLOCKS_PER_DAY;
   const netUsd = minerUsd - taoUsd;
   const alphaBeforeCap = taoPerBlock / Math.max(selectedSubnet.spotPrice, 1e-9);
   const alphaCap = selectedSubnet.rootProportion * alphaRate;
@@ -382,22 +354,43 @@ export default function Home() {
   const capped = alphaAfterCap + 1e-9 < alphaBeforeCap;
 
   const resetScenario = () => setBurnPercent(selectedSubnet.minerBurned * 100);
-  const setSharePercent = (value: number) => {
-    setBurnPercent(solveBurnForShare(selectedSubnet.netuid, value / 100) * 100);
+  const selectSubnet = (nextNetuid: number) => {
+    const nextSubnet = modelSubnets.find((subnet) => subnet.netuid === nextNetuid);
+    if (!nextSubnet) return;
+    setSelectedNetuid(nextNetuid);
+    setBurnPercent(nextSubnet.minerBurned * 100);
   };
-  const verifyApiKey = async () => {
+  const setSharePercent = (value: number) => {
+    setBurnPercent(
+      solveBurnForShare(modelSubnets, gateBar, gateExponent, selectedSubnet.netuid, value / 100) * 100,
+    );
+  };
+  const loadLiveSnapshot = async () => {
     if (!apiKey.trim()) return;
-    setApiKeyStatus("checking");
+    setApiKeyStatus("loading");
+    setApiKeyMessage("");
     try {
-      const response = await fetch("/api/taostats/validate", {
+      const response = await fetch("/api/taostats/snapshot", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ apiKey: apiKey.trim() }),
       });
-      const result = (await response.json()) as { valid?: boolean };
-      setApiKeyStatus(response.ok && result.valid ? "valid" : "invalid");
+      const result = (await response.json()) as LiveSnapshot & { error?: string };
+      if (!response.ok || !Array.isArray(result.subnets) || !result.subnets.length) {
+        throw new Error(result.error ?? "TaoStats returned an invalid snapshot.");
+      }
+      setSnapshot(result);
+      const nextSubnet = result.subnets.find(
+        (subnet) => subnet.netuid === selectedNetuid && subnet.emissionEnabled,
+      ) ?? result.subnets.find((subnet) => subnet.netuid === 64 && subnet.emissionEnabled)
+        ?? result.subnets.find((subnet) => subnet.emissionEnabled)
+        ?? result.subnets[0];
+      setSelectedNetuid(nextSubnet.netuid);
+      setBurnPercent(nextSubnet.minerBurned * 100);
+      setApiKeyStatus("live");
     } catch {
       setApiKeyStatus("invalid");
+      setApiKeyMessage("Key rejected, data incomplete, or TaoStats unreachable.");
     }
   };
 
@@ -410,30 +403,37 @@ export default function Home() {
           <a href="#alpha-surface">Alpha cap</a>
           <a href="#method">Method</a>
         </div>
-        <div className="nav-meta"><span className="pulse" /> FINNEY · SNAPSHOT</div>
+        <div className="nav-meta"><span className={`pulse ${snapshot ? "" : "fallback"}`} /> FINNEY · {snapshot ? "LIVE" : "FALLBACK"}</div>
       </nav>
 
       <header className="hero">
         <div className="eyebrow">BITTENSOR EMISSIONS LAB / 01</div>
         <h1>See where emission<br /><em>value diverges.</em></h1>
-        <p>Model how miner burn reshapes a subnet&apos;s TAO allocation, miner value and capped alpha injection — using the latest TaoStats market snapshot.</p>
+        <p>Model how miner burn reshapes a subnet&apos;s TAO allocation, miner value and capped alpha injection — using one coherent TaoStats snapshot when connected.</p>
       </header>
 
       <section className="snapshot-bar" aria-label="Current network snapshot">
-        <article><span>TAO / USD</span><b>$${TAO_USD.toFixed(2)}</b><small>as at {shortDate(TAO_PRICE_CAPTURE)}</small></article>
+        <article><span>TAO / USD</span><b>$${taoUsdRate.toFixed(2)}</b><small>as at {shortDate(snapshot?.taoPriceCapturedAt ?? FALLBACK_TAO_PRICE_CAPTURE)}</small></article>
         <article><span>BLOCK EMISSION</span><b>{BLOCK_EMISSION_TAO.toFixed(2)} τ</b><small>{BLOCKS_PER_DAY.toLocaleString()} blocks / day</small></article>
         <article><span>ACTIVE MODEL</span><b>SN{selectedSubnet.netuid}</b><small>{selectedSubnet.name}</small></article>
         <article><span>ROOT PROPORTION</span><b>{(selectedSubnet.rootProportion * 100).toFixed(2)}%</b><small>live cap input</small></article>
       </section>
 
+      <div className={`data-state-strip ${snapshot ? "is-live" : "is-fallback"}`} role="status">
+        <span>{snapshot ? "LIVE INPUTS" : "HISTORICAL FALLBACK"}</span>
+        <p>{snapshot
+          ? `TaoStats feeds reconciled across blocks ${snapshot.blockMin.toLocaleString()}–${snapshot.blockMax.toLocaleString()}.`
+          : "These bundled values are for offline display only. Enter a TaoStats key below and choose Load live before comparing emissions."}</p>
+      </div>
+
       <section className="selector-band">
         <div>
           <span>CHOOSE A SUBNET</span>
-          <p>The model includes {SUBNETS.length} current pools; allocation excludes emission-disabled subnets.</p>
+          <p>The model includes {modelSubnets.length} eligible pools; every burn change renormalizes the complete network.</p>
         </div>
         <label>
           <span className="sr-only">Subnet</span>
-          <select value={selectedNetuid} onChange={(event) => setSelectedNetuid(Number(event.target.value))}>
+          <select value={selectedNetuid} onChange={(event) => selectSubnet(Number(event.target.value))}>
             {enabledSubnets.map((subnet) => (
               <option value={subnet.netuid} key={subnet.netuid}>SN{subnet.netuid} · {subnet.name}</option>
             ))}
@@ -451,7 +451,17 @@ export default function Home() {
           <div className="subnet-chip"><b>SN{selectedSubnet.netuid}</b><span>{selectedSubnet.name}</span></div>
         </div>
         <div className="workspace-grid">
-          <Surface3D mode="difference" subnet={selectedSubnet} burn={burn} share={taoShare} maxShare={maxShare} />
+          <Surface3D
+            mode="difference"
+            subnets={modelSubnets}
+            gateBar={gateBar}
+            gateExponent={gateExponent}
+            taoUsdRate={taoUsdRate}
+            subnet={selectedSubnet}
+            burn={burn}
+            share={taoShare}
+            maxShare={maxShare}
+          />
           <aside className="control-panel">
             <div className="control-title"><span>LINKED SCENARIO</span><b>01</b></div>
             <Slider
@@ -501,7 +511,17 @@ export default function Home() {
           <div className={`cap-badge ${capped ? "is-capped" : ""}`}>{capped ? "CAP BINDING" : "BELOW CAP"}</div>
         </div>
         <div className="workspace-grid">
-          <Surface3D mode="alpha" subnet={selectedSubnet} burn={burn} share={taoShare} maxShare={maxShare} />
+          <Surface3D
+            mode="alpha"
+            subnets={modelSubnets}
+            gateBar={gateBar}
+            gateExponent={gateExponent}
+            taoUsdRate={taoUsdRate}
+            subnet={selectedSubnet}
+            burn={burn}
+            share={taoShare}
+            maxShare={maxShare}
+          />
           <aside className="control-panel alpha-panel">
             <div className="control-title"><span>CAP READOUT</span><b>02</b></div>
             <div className="alpha-result">
@@ -537,8 +557,8 @@ export default function Home() {
           </article>
           <article>
             <span>02 · BURN + GATE</span>
-            <code>sᵢ ∝ dᵢ(1 − burnᵢ) · gate(dᵢ)</code>
-            <p>The selected burn is renormalized across the network, passed through the Hill gate, then adjusted for enabled subnets.</p>
+            <code>sᵢ → sᵢ·gate(sᵢ) → normalize</code>
+            <p>Burn-adjusted demand is renormalized across every eligible subnet, passed through the fixed Hill gate, then redistributed over enabled subnets.</p>
           </article>
           <article>
             <span>03 · VALUE GAP</span>
@@ -556,18 +576,18 @@ export default function Home() {
       <section className="provenance">
         <div>
           <span>MARKET SNAPSHOT</span>
-          <b>TaoStats MCP · block {LIVE_BLOCK.toLocaleString()}</b>
-          <small>{shortDate(LIVE_CAPTURE)} · prices, root proportions, supply and enablement for {SUBNETS.length} pools</small>
+          <b>{snapshot ? `TaoStats live · block ${snapshot.blockMin.toLocaleString()}–${snapshot.blockMax.toLocaleString()}` : `Bundled fallback · block ${FALLBACK_LIVE_BLOCK.toLocaleString()}`}</b>
+          <small>{shortDate(snapshot?.capturedAt ?? FALLBACK_LIVE_CAPTURE)} · moving prices, burns, eligibility, enablement and pools fetched together</small>
         </div>
         <div>
           <span>EMA + BURN BASELINE</span>
-          <b>Bittensor emissions snapshot</b>
-          <small>{shortDate(EMA_CAPTURE)} · public reference inputs; current scenario overrides the selected subnet burn</small>
+          <b>{snapshot ? "Same-request TaoStats inputs" : "Historical reference inputs"}</b>
+          <small>{snapshot ? `${modelSubnets.length} eligible subnets · scenario overrides only the selected burn` : `${shortDate(FALLBACK_EMA_CAPTURE)} · connect a key to replace this fallback`}</small>
         </div>
         <div>
           <span>MODEL SOURCE</span>
-          <b>Bittensor runtime formula</b>
-          <small>0.5 τ / block · 12-second blocks · fixed reference gate midpoint</small>
+          <b>Bittensor runtime formula · θ {(gateBar * 100).toFixed(3)}%</b>
+          <small>0.5 τ / block · 12-second blocks · rank-32 midpoint fixed for the loaded scenario</small>
         </div>
       </section>
 
@@ -594,6 +614,7 @@ export default function Home() {
             onChange={(event) => {
               setApiKey(event.target.value);
               setApiKeyStatus("idle");
+              setApiKeyMessage("");
             }}
             placeholder="tao-••••••••:••••••••"
             autoComplete="off"
@@ -605,13 +626,13 @@ export default function Home() {
         </div>
         <div className="api-key-actions">
           <p className={`api-key-status ${apiKeyStatus}`} aria-live="polite">
-            {apiKeyStatus === "checking" && "Checking with TaoStats…"}
-            {apiKeyStatus === "valid" && "Key valid · ready"}
-            {apiKeyStatus === "invalid" && "Key invalid or TaoStats unreachable"}
-            {apiKeyStatus === "idle" && "Held in memory only · never stored"}
+            {apiKeyStatus === "loading" && "Loading four live TaoStats feeds…"}
+            {apiKeyStatus === "live" && snapshot && `Live · blocks ${snapshot.blockMin.toLocaleString()}–${snapshot.blockMax.toLocaleString()}`}
+            {apiKeyStatus === "invalid" && (apiKeyMessage || "Key invalid or TaoStats unreachable")}
+            {apiKeyStatus === "idle" && (snapshot ? "Snapshot retained · reload to refresh" : "Held in memory only · never stored")}
           </p>
-          <button type="button" className="verify-key" onClick={verifyApiKey} disabled={!apiKey.trim() || apiKeyStatus === "checking"}>
-            Verify
+          <button type="button" className="verify-key" onClick={loadLiveSnapshot} disabled={!apiKey.trim() || apiKeyStatus === "loading"}>
+            {snapshot ? "Refresh live" : "Load live"}
           </button>
         </div>
       </aside>

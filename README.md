@@ -7,15 +7,15 @@ The app includes:
 
 - two rotatable and zoomable 3D canvas surfaces;
 - bidirectionally linked miner-burn and TAO-emission controls;
-- 128 non-root subnet pool snapshots;
+- a bundled fallback plus a live, same-request TaoStats snapshot;
 - subnet selection and cap diagnostics;
-- a lower-left TaoStats API-key verifier that keeps the key in memory only.
+- a lower-left TaoStats loader that keeps the key in memory only.
 
 ## Requirements
 
 - Node.js 22.13 or newer
 - npm
-- Internet access when verifying a TaoStats API key
+- Internet access when loading a TaoStats snapshot
 
 ## Run locally
 
@@ -26,10 +26,12 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
-The dashboard data snapshot is bundled, so the visualisations work without an
-API key. The API-key box sends the key only to the local server route, which
-forwards it to `https://mcp.taostats.io` for verification. It is not written to
-disk, browser storage, logs, or source files.
+The visualisations open with a clearly labelled bundled fallback. Enter a
+TaoStats API key and choose **Load live** to replace it with one request-scoped
+snapshot containing current subnet eligibility, moving prices, miner burns,
+emission-enabled flags, pool state, root proportions, and TAO/USD price. The
+key is sent only to the local server and documented `api.taostats.io` routes. It
+is not written to disk, browser storage, logs, or source files.
 
 ## Verify the project
 
@@ -51,9 +53,11 @@ git commit -m "Initial Tensor Lens dashboard"
 
 ## Project map
 
-- `app/page.tsx` — dashboard UI, model calculations, and canvas rendering
-- `app/emission-data.ts` — bundled TaoStats/Bittensor snapshot
-- `app/api/taostats/validate/route.ts` — stateless API-key verification
+- `app/page.tsx` — dashboard UI and canvas rendering
+- `app/emission-model.ts` — burn, normalization, gate, and inverse-share model
+- `app/emission-data.ts` — bundled offline fallback
+- `app/taostats-snapshot.ts` — live response normalization and gate derivation
+- `app/api/taostats/snapshot/route.ts` — stateless live-data proxy
 - `app/globals.css` — responsive visual system
 - `tests/rendered-html.test.mjs` — production render checks
 - `AGENTS.md` — repository-specific guidance for coding agents
