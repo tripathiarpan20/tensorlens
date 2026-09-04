@@ -1,7 +1,28 @@
 # Tensor Lens — Bittensor Emissions Lab
 
-An interactive local dashboard for exploring the relationship between miner
-burn, TAO emission share, daily emission value, and capped alpha injection.
+Tensor Lens gives subnet owners and miners a shared view of the same emissions
+system. Explore how miner burn changes a subnet's burn-adjusted TAO share,
+compare the daily value directed to the subnet with the alpha value earned by
+miners, and see when the root-proportion alpha injection cap binds.
+
+## One model, both sides of the subnet
+
+- **Subnet owners** can test how burn strategy changes TAO allocation, net
+  subnet value, and capped alpha injection across the full network.
+- **Miners** can see how burn affects miner-side alpha value and why changes to
+  one subnet alter every enabled subnet's share.
+- **Both** can compare scenarios with the same assumptions, live inputs, and
+  formulas instead of reasoning from separate headline metrics.
+
+The net difference is deliberately subnet-first:
+
+```text
+subnet net value = TAO injection value − miner alpha value after burn
+```
+
+A positive result means TAO injection value is greater; a negative result means
+miner alpha value is greater. The individual values remain visible beside the
+net result so both audiences can understand the trade-off.
 
 The app includes:
 
@@ -40,16 +61,6 @@ npm test
 ```
 
 This builds the production worker and checks the rendered dashboard.
-
-## Start your own Git history
-
-The exported folder intentionally contains no `.git` directory:
-
-```bash
-git init
-git add .
-git commit -m "Initial Tensor Lens dashboard"
-```
 
 ## Project map
 

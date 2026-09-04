@@ -1,5 +1,12 @@
 import type { SubnetPoint } from "./emission-data.ts";
 
+export function calculateSubnetNetValueUsd(
+  taoInjectionUsd: number,
+  minerEmissionUsd: number,
+) {
+  return taoInjectionUsd - minerEmissionUsd;
+}
+
 export function alphaEmissionRate(totalAlpha: number) {
   let rate = 1;
   let threshold = 10_500_000;

@@ -15,7 +15,12 @@ import {
   TAO_USD as FALLBACK_TAO_USD,
   type SubnetPoint,
 } from "./emission-data";
-import { alphaEmissionRate, calculateTaoShare, solveBurnForShare } from "./emission-model";
+import {
+  alphaEmissionRate,
+  calculateSubnetNetValueUsd,
+  calculateTaoShare,
+  solveBurnForShare,
+} from "./emission-model";
 import type { LiveSnapshot } from "./taostats-snapshot";
 
 type SurfaceMode = "difference" | "alpha";
@@ -35,7 +40,7 @@ function surfaceValue(
   const minerUsd =
     MINER_FRACTION * (1 - burn) * alphaRate * subnet.spotPrice * taoUsdRate * BLOCKS_PER_DAY;
   const taoUsd = taoPerBlock * taoUsdRate * BLOCKS_PER_DAY;
-  return minerUsd - taoUsd;
+  return calculateSubnetNetValueUsd(taoUsd, minerUsd);
 }
 
 function compactUsd(value: number) {
@@ -266,7 +271,7 @@ function Surface3D({
         <span className="legend-path" /> Feasible burn → emission path
         <span className="legend-point" /> Current scenario
       </div>
-      <span className="axis axis-z">{mode === "difference" ? "NET · USD/DAY" : "α_IN · ALPHA/DAY"}</span>
+      <span className="axis axis-z">{mode === "difference" ? "SUBNET NET · USD/DAY" : "α_IN · ALPHA/DAY"}</span>
       <span className="axis axis-x">MINER BURN % →</span>
       <span className="axis axis-y">TAO EMISSION % →</span>
       <div className="interaction-hint">DRAG · ROTATE &nbsp; / &nbsp; SCROLL · ZOOM</div>
@@ -347,7 +352,7 @@ export default function Home() {
   const minerUsd =
     MINER_FRACTION * (1 - burn) * alphaRate * selectedSubnet.spotPrice * taoUsdRate * BLOCKS_PER_DAY;
   const taoUsd = taoPerBlock * taoUsdRate * BLOCKS_PER_DAY;
-  const netUsd = minerUsd - taoUsd;
+  const subnetNetUsd = calculateSubnetNetValueUsd(taoUsd, minerUsd);
   const alphaBeforeCap = taoPerBlock / Math.max(selectedSubnet.spotPrice, 1e-9);
   const alphaCap = selectedSubnet.rootProportion * alphaRate;
   const alphaAfterCap = Math.min(alphaBeforeCap, alphaCap);
@@ -446,7 +451,7 @@ export default function Home() {
           <div>
             <span className="section-index">01</span>
             <h2>Value difference surface</h2>
-            <p>Miner alpha value after burn − TAO injection value · USD / day</p>
+            <p>TAO injection value − miner alpha value after burn · USD / day</p>
           </div>
           <div className="subnet-chip"><b>SN{selectedSubnet.netuid}</b><span>{selectedSubnet.name}</span></div>
         </div>
@@ -486,9 +491,13 @@ export default function Home() {
             />
             <p className="linked-note" id="linked-note"><i /> Bidirectionally linked. Moving TAO emission solves for the miner-burn value that produces it.</p>
             <div className="scenario-result">
-              <span>NET DIFFERENCE</span>
-              <b className={netUsd >= 0 ? "positive" : "negative"}>{compactUsd(netUsd)}</b>
-              <small>{netUsd >= 0 ? "Miner value leads TAO injection" : "TAO injection leads miner value"} per day</small>
+              <span>NET DIFFERENCE · SUBNET VIEW</span>
+              <b className={subnetNetUsd >= 0 ? "positive" : "negative"}>{compactUsd(subnetNetUsd)}</b>
+              <small>{subnetNetUsd > 0
+                ? "TAO injection leads miner value"
+                : subnetNetUsd < 0
+                  ? "Miner value leads TAO injection"
+                  : "TAO injection and miner value are balanced"} per day</small>
             </div>
             <div className="metric-pair">
               <div><span>MINER VALUE / DAY</span><b>{compactUsd(minerUsd)}</b></div>
@@ -562,8 +571,8 @@ export default function Home() {
           </article>
           <article>
             <span>03 · VALUE GAP</span>
-            <code>Δ$ = miner α value − tao_in value</code>
-            <p>Miner value uses 41% of participant alpha emission after the scenario burn, priced at the current subnet spot and TAO/USD price.</p>
+            <code>Δ$ subnet = tao_in value − miner α value</code>
+            <p>Positive values favour the subnet view; negative values mean miner alpha value leads. Miner value uses 41% of participant alpha emission after the scenario burn.</p>
           </article>
           <article>
             <span>04 · ALPHA CAP</span>

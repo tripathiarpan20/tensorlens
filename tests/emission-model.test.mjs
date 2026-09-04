@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { calculateTaoShare, deriveRankGateBar } from "../app/emission-model.ts";
+import {
+  calculateSubnetNetValueUsd,
+  calculateTaoShare,
+  deriveRankGateBar,
+} from "../app/emission-model.ts";
 import { buildLiveSnapshot } from "../app/taostats-snapshot.ts";
 
 function point(netuid, emaPrice, minerBurned = 0) {
@@ -18,6 +22,12 @@ function point(netuid, emaPrice, minerBurned = 0) {
     emaFromReference: false,
   };
 }
+
+test("subnet net value is positive when TAO injection exceeds miner emissions", () => {
+  assert.equal(calculateSubnetNetValueUsd(250, 180), 70);
+  assert.equal(calculateSubnetNetValueUsd(180, 250), -70);
+  assert.equal(calculateSubnetNetValueUsd(250, 250), 0);
+});
 
 test("changing one subnet burn renormalizes every subnet", () => {
   const subnets = [point(1, 0.6), point(2, 0.4)];

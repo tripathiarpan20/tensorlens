@@ -1,7 +1,18 @@
+import { existsSync, readFileSync } from "node:fs";
 import { sites } from "@openai/sites-vite-plugin";
 import vinext from "vinext";
 import { defineConfig } from "vite";
-import hostingConfig from "./.openai/hosting.json";
+
+type HostingConfig = {
+  d1: string | null;
+  r2: string | null;
+};
+
+const hostingConfigUrl = new URL("./.openai/hosting.json", import.meta.url);
+const hasHostingConfig = existsSync(hostingConfigUrl);
+const hostingConfig: HostingConfig = hasHostingConfig
+  ? JSON.parse(readFileSync(hostingConfigUrl, "utf8"))
+  : { d1: null, r2: null };
 
 const SITE_CREATOR_PLACEHOLDER_DATABASE_ID =
   "00000000-0000-4000-8000-000000000000";
@@ -49,7 +60,7 @@ export default defineConfig(async () => {
       : undefined,
     plugins: [
       vinext(),
-      sites(),
+      ...(hasHostingConfig ? [sites()] : []),
       cloudflare({
         viteEnvironment: { name: "rsc", childEnvironments: ["ssr"] },
         config: localBindingConfig,
