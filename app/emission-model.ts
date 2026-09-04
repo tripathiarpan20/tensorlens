@@ -7,6 +7,44 @@ export function calculateSubnetNetValueUsd(
   return taoInjectionUsd - minerEmissionUsd;
 }
 
+export function calculateEmissionRouting(
+  taoAllocation: number,
+  spotPrice: number,
+  rootProportion: number,
+  alphaEmission: number,
+) {
+  const safeTaoAllocation = Math.max(0, taoAllocation);
+  const safeSpotPrice = Math.max(spotPrice, 1e-9);
+  const alphaTarget = safeTaoAllocation / safeSpotPrice;
+  const alphaCap = Math.max(0, rootProportion) * Math.max(0, alphaEmission);
+  const alphaIn = Math.min(alphaTarget, alphaCap);
+  const liquidityTao = Math.min(safeTaoAllocation, alphaIn * safeSpotPrice);
+
+  return {
+    alphaTarget,
+    alphaCap,
+    alphaIn,
+    liquidityTao,
+    chainBuyTao: Math.max(0, safeTaoAllocation - liquidityTao),
+  };
+}
+
+export function calculateMinerLiquidation(
+  alphaEmission: number,
+  minerFraction: number,
+  minerBurn: number,
+  spotPrice: number,
+) {
+  const minerAlpha = Math.max(0, alphaEmission)
+    * Math.min(1, Math.max(0, minerFraction))
+    * (1 - Math.min(1, Math.max(0, minerBurn)));
+
+  return {
+    minerAlpha,
+    minerTao: minerAlpha * Math.max(0, spotPrice),
+  };
+}
+
 export function alphaEmissionRate(totalAlpha: number) {
   let rate = 1;
   let threshold = 10_500_000;

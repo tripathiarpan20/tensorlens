@@ -3,7 +3,7 @@ import { headers } from "next/headers";
 import "./globals.css";
 
 const title = "Tensor Lens — Bittensor Emissions Lab";
-const description = "Interactive 3D modelling of miner burn, TAO emission value and capped alpha injection across Bittensor subnets.";
+const description = "Interactive 3D modelling of miner burn, TAO emission value, capped alpha injection and chain-buy surplus across Bittensor subnets.";
 
 export async function generateMetadata(): Promise<Metadata> {
   const requestHeaders = await headers();

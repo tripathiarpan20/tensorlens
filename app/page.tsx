@@ -17,13 +17,15 @@ import {
 } from "./emission-data";
 import {
   alphaEmissionRate,
+  calculateEmissionRouting,
+  calculateMinerLiquidation,
   calculateSubnetNetValueUsd,
   calculateTaoShare,
   solveBurnForShare,
 } from "./emission-model";
 import type { LiveSnapshot } from "./taostats-snapshot";
 
-type SurfaceMode = "difference" | "alpha";
+type SurfaceMode = "difference" | "alpha" | "pressure";
 
 function surfaceValue(
   mode: SurfaceMode,
@@ -34,11 +36,23 @@ function surfaceValue(
 ) {
   const alphaRate = alphaEmissionRate(subnet.totalAlpha);
   const taoPerBlock = taoShare * BLOCK_EMISSION_TAO;
-  if (mode === "alpha") {
-    return Math.min(taoPerBlock / Math.max(subnet.spotPrice, 1e-9), subnet.rootProportion * alphaRate) * BLOCKS_PER_DAY;
+  const routing = calculateEmissionRouting(
+    taoPerBlock,
+    subnet.spotPrice,
+    subnet.rootProportion,
+    alphaRate,
+  );
+  if (mode === "alpha") return routing.alphaIn * BLOCKS_PER_DAY;
+  const minerLiquidation = calculateMinerLiquidation(
+    alphaRate,
+    MINER_FRACTION,
+    burn,
+    subnet.spotPrice,
+  );
+  if (mode === "pressure") {
+    return (routing.chainBuyTao - minerLiquidation.minerTao) * BLOCKS_PER_DAY;
   }
-  const minerUsd =
-    MINER_FRACTION * (1 - burn) * alphaRate * subnet.spotPrice * taoUsdRate * BLOCKS_PER_DAY;
+  const minerUsd = minerLiquidation.minerTao * taoUsdRate * BLOCKS_PER_DAY;
   const taoUsd = taoPerBlock * taoUsdRate * BLOCKS_PER_DAY;
   return calculateSubnetNetValueUsd(taoUsd, minerUsd);
 }
@@ -55,6 +69,28 @@ function compactAlpha(value: number) {
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}m α`;
   if (value >= 1_000) return `${(value / 1_000).toFixed(1)}k α`;
   return `${value.toFixed(2)} α`;
+}
+
+function compactTao(value: number) {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}m τ`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}k τ`;
+  if (value >= 1) return `${value.toFixed(2)} τ`;
+  if (value >= 0.01) return `${value.toFixed(3)} τ`;
+  return `${value.toFixed(5)} τ`;
+}
+
+function compactSignedTao(value: number) {
+  const sign = value < 0 ? "−" : value > 0 ? "+" : "";
+  return `${sign}${compactTao(Math.abs(value))}`;
+}
+
+function compactLiquidationTao(value: number) {
+  return value > 0 ? `−${compactTao(value)}` : compactTao(0);
+}
+
+function compactLiquidationUsd(value: number) {
+  const amount = compactUsd(Math.abs(value)).replace("+", "");
+  return value > 0 ? `−${amount}` : amount;
 }
 
 function shortDate(value: string) {
@@ -177,7 +213,7 @@ function Surface3D({
     cells.sort((a, b) => a.depth - b.depth);
     for (const cell of cells) {
       const t = (cell.value - minValue) / span;
-      const hue = mode === "difference" ? 236 + t * 103 : 188 - t * 112;
+      const hue = mode === "difference" ? 236 + t * 103 : mode === "alpha" ? 188 - t * 112 : 45 - t * 25;
       ctx.beginPath();
       ctx.moveTo(cell.points[0].x, cell.points[0].y);
       for (let i = 1; i < cell.points.length; i++) ctx.lineTo(cell.points[i].x, cell.points[i].y);
@@ -200,7 +236,7 @@ function Surface3D({
     }
     ctx.strokeStyle = "#ffffff";
     ctx.lineWidth = 2.2;
-    ctx.shadowColor = mode === "difference" ? "#ff3f91" : "#d9ff43";
+    ctx.shadowColor = mode === "difference" ? "#ff3f91" : mode === "alpha" ? "#d9ff43" : "#ff9f43";
     ctx.shadowBlur = 14;
     ctx.stroke();
     ctx.shadowBlur = 0;
@@ -210,13 +246,13 @@ function Surface3D({
     ctx.beginPath();
     ctx.arc(marker.x, marker.y, 7, 0, Math.PI * 2);
     ctx.fillStyle = "#fff";
-    ctx.shadowColor = mode === "difference" ? "#ff3f91" : "#d9ff43";
+    ctx.shadowColor = mode === "difference" ? "#ff3f91" : mode === "alpha" ? "#d9ff43" : "#ff9f43";
     ctx.shadowBlur = 22;
     ctx.fill();
     ctx.shadowBlur = 0;
     ctx.beginPath();
     ctx.arc(marker.x, marker.y, 13, 0, Math.PI * 2);
-    ctx.strokeStyle = mode === "difference" ? "#ff3f91" : "#d9ff43";
+    ctx.strokeStyle = mode === "difference" ? "#ff3f91" : mode === "alpha" ? "#d9ff43" : "#ff9f43";
     ctx.lineWidth = 1;
     ctx.stroke();
   }, [burn, gateBar, gateExponent, maxShare, mode, share, sizeTick, subnet, subnets, taoUsdRate, view]);
@@ -230,7 +266,11 @@ function Surface3D({
         className="surface-canvas"
         role="img"
         tabIndex={0}
-        aria-label={mode === "difference" ? "Interactive three-dimensional net emissions value surface" : "Interactive three-dimensional capped alpha injection surface"}
+        aria-label={mode === "difference"
+          ? "Interactive three-dimensional net emissions value surface"
+          : mode === "alpha"
+            ? "Interactive three-dimensional capped alpha injection surface"
+            : "Interactive three-dimensional net chain-buy pressure surface"}
         onPointerDown={(event) => {
           event.currentTarget.setPointerCapture(event.pointerId);
           dragRef.current = { x: event.clientX, y: event.clientY };
@@ -271,7 +311,9 @@ function Surface3D({
         <span className="legend-path" /> Feasible burn → emission path
         <span className="legend-point" /> Current scenario
       </div>
-      <span className="axis axis-z">{mode === "difference" ? "SUBNET NET · USD/DAY" : "α_IN · ALPHA/DAY"}</span>
+      <span className="axis axis-z">{mode === "difference"
+        ? "SUBNET NET · USD/DAY"
+        : mode === "alpha" ? "α_IN · ALPHA/DAY" : "NET BUY · TAO/DAY"}</span>
       <span className="axis axis-x">MINER BURN % →</span>
       <span className="axis axis-y">TAO EMISSION % →</span>
       <div className="interaction-hint">DRAG · ROTATE &nbsp; / &nbsp; SCROLL · ZOOM</div>
@@ -349,13 +391,35 @@ export default function Home() {
   const maxSharePercent = maxShare * 100;
   const alphaRate = alphaEmissionRate(selectedSubnet.totalAlpha);
   const taoPerBlock = taoShare * BLOCK_EMISSION_TAO;
-  const minerUsd =
-    MINER_FRACTION * (1 - burn) * alphaRate * selectedSubnet.spotPrice * taoUsdRate * BLOCKS_PER_DAY;
+  const minerLiquidation = calculateMinerLiquidation(
+    alphaRate,
+    MINER_FRACTION,
+    burn,
+    selectedSubnet.spotPrice,
+  );
+  const minerUsd = minerLiquidation.minerTao * taoUsdRate * BLOCKS_PER_DAY;
   const taoUsd = taoPerBlock * taoUsdRate * BLOCKS_PER_DAY;
   const subnetNetUsd = calculateSubnetNetValueUsd(taoUsd, minerUsd);
-  const alphaBeforeCap = taoPerBlock / Math.max(selectedSubnet.spotPrice, 1e-9);
-  const alphaCap = selectedSubnet.rootProportion * alphaRate;
-  const alphaAfterCap = Math.min(alphaBeforeCap, alphaCap);
+  const routing = calculateEmissionRouting(
+    taoPerBlock,
+    selectedSubnet.spotPrice,
+    selectedSubnet.rootProportion,
+    alphaRate,
+  );
+  const alphaBeforeCap = routing.alphaTarget;
+  const alphaCap = routing.alphaCap;
+  const alphaAfterCap = routing.alphaIn;
+  const liquidityTaoPerBlock = routing.liquidityTao;
+  const chainBuyTaoPerBlock = routing.chainBuyTao;
+  const totalTaoPerDay = taoPerBlock * BLOCKS_PER_DAY;
+  const liquidityTaoPerDay = liquidityTaoPerBlock * BLOCKS_PER_DAY;
+  const chainBuyTaoPerDay = chainBuyTaoPerBlock * BLOCKS_PER_DAY;
+  const chainBuyUsdPerDay = chainBuyTaoPerDay * taoUsdRate;
+  const minerLiquidationTaoPerDay = minerLiquidation.minerTao * BLOCKS_PER_DAY;
+  const netBuyTaoPerBlock = chainBuyTaoPerBlock - minerLiquidation.minerTao;
+  const netBuyTaoPerDay = netBuyTaoPerBlock * BLOCKS_PER_DAY;
+  const netBuyUsdPerDay = netBuyTaoPerDay * taoUsdRate;
+  const chainBuyShare = taoPerBlock > 0 ? chainBuyTaoPerBlock / taoPerBlock : 0;
   const capped = alphaAfterCap + 1e-9 < alphaBeforeCap;
 
   const resetScenario = () => setBurnPercent(selectedSubnet.minerBurned * 100);
@@ -406,6 +470,7 @@ export default function Home() {
         <div className="nav-links">
           <a href="#value-surface">Value surface</a>
           <a href="#alpha-surface">Alpha cap</a>
+          <a href="#chain-buys">Chain buys</a>
           <a href="#method">Method</a>
         </div>
         <div className="nav-meta"><span className={`pulse ${snapshot ? "" : "fallback"}`} /> FINNEY · {snapshot ? "LIVE" : "FALLBACK"}</div>
@@ -414,7 +479,7 @@ export default function Home() {
       <header className="hero">
         <div className="eyebrow">BITTENSOR EMISSIONS LAB / 01</div>
         <h1>See where emission<br /><em>value diverges.</em></h1>
-        <p>Model how miner burn reshapes a subnet&apos;s TAO allocation, miner value and capped alpha injection — using one coherent TaoStats snapshot when connected.</p>
+        <p>Model how miner burn reshapes a subnet&apos;s TAO allocation, miner value, capped liquidity injection and chain-buy surplus — using one coherent TaoStats snapshot when connected.</p>
       </header>
 
       <section className="snapshot-bar" aria-label="Current network snapshot">
@@ -451,7 +516,7 @@ export default function Home() {
           <div>
             <span className="section-index">01</span>
             <h2>Value difference surface</h2>
-            <p>TAO injection value − miner alpha value after burn · USD / day</p>
+            <p>Total TAO allocation value (LP + chain buy) − miner alpha value after burn · USD / day</p>
           </div>
           <div className="subnet-chip"><b>SN{selectedSubnet.netuid}</b><span>{selectedSubnet.name}</span></div>
         </div>
@@ -494,14 +559,14 @@ export default function Home() {
               <span>NET DIFFERENCE · SUBNET VIEW</span>
               <b className={subnetNetUsd >= 0 ? "positive" : "negative"}>{compactUsd(subnetNetUsd)}</b>
               <small>{subnetNetUsd > 0
-                ? "TAO injection leads miner value"
+                ? "Total TAO allocation leads miner value"
                 : subnetNetUsd < 0
-                  ? "Miner value leads TAO injection"
-                  : "TAO injection and miner value are balanced"} per day</small>
+                  ? "Miner value leads total TAO allocation"
+                  : "Total TAO allocation and miner value are balanced"} per day</small>
             </div>
             <div className="metric-pair">
               <div><span>MINER VALUE / DAY</span><b>{compactUsd(minerUsd)}</b></div>
-              <div><span>TAO VALUE / DAY</span><b>{compactUsd(taoUsd)}</b></div>
+              <div><span>TOTAL TAO VALUE / DAY</span><b>{compactUsd(taoUsd)}</b></div>
               <div><span>TAO / BLOCK</span><b>{taoPerBlock.toFixed(5)} τ</b></div>
               <div><span>EMA PRICE</span><b>{selectedSubnet.emaPrice.toFixed(6)}</b></div>
             </div>
@@ -515,7 +580,7 @@ export default function Home() {
           <div>
             <span className="section-index">02</span>
             <h2>Alpha injection after cap</h2>
-            <p>min(tao_in ÷ spot price, root proportion × alpha emission) · α / day</p>
+            <p>min(TAO allocation ÷ spot price, root proportion × alpha emission) · α / day</p>
           </div>
           <div className={`cap-badge ${capped ? "is-capped" : ""}`}>{capped ? "CAP BINDING" : "BELOW CAP"}</div>
         </div>
@@ -552,9 +617,66 @@ export default function Home() {
         </div>
       </section>
 
+      <section className="model-shell buyback-shell" id="chain-buys">
+        <div className="model-head">
+          <div>
+            <span className="section-index">03</span>
+            <h2>Chain-buy surplus</h2>
+            <p>Gross chain-buy TAO − 100% miner-emission liquidation · τ / day</p>
+          </div>
+          <div className={`cap-badge ${netBuyTaoPerBlock > 0 ? "is-buying" : netBuyTaoPerBlock < 0 ? "is-selling" : ""}`}>
+            {netBuyTaoPerBlock > 0 ? "NET BUY PRESSURE" : netBuyTaoPerBlock < 0 ? "NET SELL PRESSURE" : "BALANCED"}
+          </div>
+        </div>
+        <div className="workspace-grid">
+          <Surface3D
+            mode="pressure"
+            subnets={modelSubnets}
+            gateBar={gateBar}
+            gateExponent={gateExponent}
+            taoUsdRate={taoUsdRate}
+            subnet={selectedSubnet}
+            burn={burn}
+            share={taoShare}
+            maxShare={maxShare}
+          />
+          <aside className="control-panel buyback-panel">
+            <div className="control-title"><span>EMISSION ROUTING</span><b>03</b></div>
+            <div className="alpha-result chain-buy-result">
+              <span>NET CHAIN-BUY PRESSURE / DAY</span>
+              <div className={`chain-buy-result-values ${netBuyTaoPerDay >= 0 ? "positive" : "negative"}`}>
+                <b>{compactSignedTao(netBuyTaoPerDay)}</b>
+                <strong>{compactUsd(netBuyUsdPerDay)}</strong>
+              </div>
+              <small>Gross chain buys − 100% miner liquidation · {netBuyTaoPerBlock.toFixed(5)} τ / block</small>
+            </div>
+            <div
+              className="routing-meter"
+              aria-label={`${((1 - chainBuyShare) * 100).toFixed(1)} percent to liquidity pool and ${(chainBuyShare * 100).toFixed(1)} percent to chain buys`}
+            >
+              <span className="routing-lp" style={{ width: `${(1 - chainBuyShare) * 100}%` }} />
+              <span className="routing-buy" style={{ width: `${chainBuyShare * 100}%` }} />
+            </div>
+            <div className="routing-labels" aria-hidden="true">
+              <span>LP {((1 - chainBuyShare) * 100).toFixed(1)}%</span>
+              <span>CHAIN BUY {(chainBuyShare * 100).toFixed(1)}%</span>
+            </div>
+            <div className="metric-pair">
+              <div><span>GROSS CHAIN BUY / DAY</span><b>{compactTao(chainBuyTaoPerDay)}</b></div>
+              <div><span>MINER LIQUIDATION / DAY</span><b>{compactLiquidationTao(minerLiquidationTaoPerDay)}</b></div>
+              <div><span>GROSS CHAIN BUY VALUE / DAY</span><b>{compactUsd(chainBuyUsdPerDay)}</b></div>
+              <div><span>MINER LIQUIDATION VALUE / DAY</span><b>{compactLiquidationUsd(minerUsd)}</b></div>
+              <div><span>TOTAL TAO ALLOCATION / DAY</span><b>{compactTao(totalTaoPerDay)}</b></div>
+              <div><span>PRICE-NEUTRAL LP TAO / DAY</span><b>{compactTao(liquidityTaoPerDay)}</b></div>
+            </div>
+            <p className="cap-note">The LP portion is paired with newly minted α_in. Net pressure assumes miners immediately liquidate 100% of their post-burn alpha emission at the displayed spot price.</p>
+          </aside>
+        </div>
+      </section>
+
       <section className="method" id="method">
         <div className="method-intro">
-          <span className="eyebrow">MODEL NOTES / 03</span>
+          <span className="eyebrow">MODEL NOTES / 04</span>
           <h2>What the surfaces mean.</h2>
           <p>The coloured plane shows every burn/emission combination. The white line is the subset the network can actually produce because TAO emission is a function of miner burn; the ring marks your current scenario.</p>
         </div>
@@ -571,13 +693,23 @@ export default function Home() {
           </article>
           <article>
             <span>03 · VALUE GAP</span>
-            <code>Δ$ subnet = tao_in value − miner α value</code>
-            <p>Positive values favour the subnet view; negative values mean miner alpha value leads. Miner value uses 41% of participant alpha emission after the scenario burn.</p>
+            <code>Δ$ subnet = total TAO value − miner α value</code>
+            <p>Total TAO value includes both price-neutral LP injection and chain buys. Miner value uses 41% of participant alpha emission after the scenario burn.</p>
           </article>
           <article>
             <span>04 · ALPHA CAP</span>
-            <code>α_in = min(tao_in / price, root_prop × α rate)</code>
+            <code>α_in = min(tao_alloc / price, root_prop × α rate)</code>
             <p>The second surface shows the price-neutral injection after the protocol&apos;s root-proportion cap.</p>
+          </article>
+          <article>
+            <span>05 · CHAIN BUY</span>
+            <code>tao_net = tao_buy − (miner α × price)</code>
+            <p>Net pressure subtracts the TAO value of 100% miner liquidation from the surplus TAO exchanged for alpha on-chain.</p>
+          </article>
+          <article>
+            <span>06 · RECONCILIATION</span>
+            <code>tao_alloc = tao_LP + tao_buy</code>
+            <p>The total TAO value in section one contains both routes; section three isolates only the chain-buy surplus.</p>
           </article>
         </div>
       </section>

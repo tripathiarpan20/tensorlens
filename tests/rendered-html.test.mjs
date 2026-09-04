@@ -32,9 +32,13 @@ test("server-renders the Tensor Lens emissions dashboard", async () => {
   assert.match(html, /Tensor Lens — Bittensor Emissions Lab/i);
   assert.match(html, /See where emission/);
   assert.match(html, /Value difference surface/);
-  assert.match(html, /TAO injection value.*miner alpha value after burn/i);
+  assert.match(html, /Total TAO allocation value.*miner alpha value after burn/i);
   assert.match(html, /NET DIFFERENCE.*SUBNET VIEW/i);
   assert.match(html, /Alpha injection after cap/);
+  assert.match(html, /Chain-buy surplus/);
+  assert.match(html, /NET CHAIN-BUY PRESSURE.*DAY/i);
+  assert.match(html, /MINER LIQUIDATION.*DAY/i);
+  assert.match(html, /TOTAL TAO ALLOCATION.*DAY/i);
   assert.match(html, /value="10" selected="">SN<!-- -->10<!-- --> · <!-- -->Pareton/);
   assert.match(html, /TaoStats|TAOSTATS CONNECTION/);
   assert.match(html, /TAOSTATS CONNECTION/);

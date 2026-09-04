@@ -6,6 +6,7 @@
   --pink: #ff3f91;
   --acid: #d9ff43;
   --blue: #5744ff;
+  --orange: #ff9f43;
   --line: rgba(18,18,18,.18);
 }
 
@@ -52,6 +53,7 @@ a { color: inherit; }
 
 .model-shell { margin: 0 4vw 70px; border: 1px solid var(--ink); background: #111; color: #fff; box-shadow: 10px 10px 0 var(--pink); scroll-margin-top: 20px; }
 .alpha-shell { box-shadow: 10px 10px 0 var(--acid); }
+.buyback-shell { box-shadow: 10px 10px 0 var(--orange); }
 .model-head { min-height: 98px; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 18px 24px; border-bottom: 1px solid #3b3b3b; }
 .model-head > div:first-child { display: grid; grid-template-columns: auto 1fr; column-gap: 13px; }
 .section-index { grid-row: 1 / 3; width: 33px; height: 33px; background: var(--acid); color: #111; display: grid; place-items: center; font: 900 .73rem monospace; }
@@ -62,10 +64,13 @@ a { color: inherit; }
 .subnet-chip span { font-weight: 800; }
 .cap-badge { border: 1px solid #4c4c4c; padding: 9px 12px; color: #a0a0a0; font: 700 .64rem monospace; letter-spacing: .12em; white-space: nowrap; }
 .cap-badge.is-capped { color: var(--acid); border-color: var(--acid); }
+.cap-badge.is-buying { color: var(--orange); border-color: var(--orange); }
+.cap-badge.is-selling { color: var(--pink); border-color: var(--pink); }
 
 .workspace-grid { display: grid; grid-template-columns: minmax(0, 1fr) 324px; min-height: 620px; }
 .canvas-stage { position: relative; overflow: hidden; min-height: 620px; background: radial-gradient(circle at 48% 42%, #292128 0, #111 56%); touch-action: none; }
 .alpha-shell .canvas-stage { background: radial-gradient(circle at 48% 42%, #1b2b29 0, #111 56%); }
+.buyback-shell .canvas-stage { background: radial-gradient(circle at 48% 42%, #302419 0, #111 56%); }
 .canvas-stage::before { content: ""; position: absolute; inset: 0; background-image: linear-gradient(rgba(255,255,255,.034) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.034) 1px, transparent 1px); background-size: 28px 28px; pointer-events: none; }
 .surface-canvas { position: absolute; inset: 7% 5% 10%; width: 90%; height: 83%; cursor: grab; outline: none; }
 .surface-canvas:active { cursor: grabbing; }
@@ -104,8 +109,18 @@ a { color: inherit; }
 .reset-scenario { width: 100%; border: 0; border-bottom: 1px solid #555; padding: 16px 0 7px; background: transparent; color: #aaa; text-align: left; cursor: pointer; font: 700 .6rem monospace; letter-spacing: .08em; text-transform: uppercase; }
 .reset-scenario:hover { color: #fff; border-color: var(--pink); }
 .alpha-result b { color: var(--acid); font-size: 1.8rem; }
+.chain-buy-result-values { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.chain-buy-result-values b { color: var(--orange); }
+.chain-buy-result-values strong { color: var(--orange); font: 800 1.12rem/1 monospace; letter-spacing: -.05em; text-align: right; }
+.chain-buy-result-values.negative b, .chain-buy-result-values.negative strong { color: var(--pink); }
 .cap-meter { height: 8px; background: #333; margin: -9px 0 25px; overflow: hidden; }
 .cap-meter span { display: block; height: 100%; background: var(--acid); }
+.routing-meter { height: 8px; display: flex; background: #333; margin: -9px 0 7px; overflow: hidden; }
+.routing-meter span { display: block; height: 100%; }
+.routing-lp { background: var(--acid); }
+.routing-buy { background: var(--orange); }
+.routing-labels { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 25px; color: #777; font: 700 .54rem monospace; letter-spacing: .08em; }
+.routing-labels span:last-child { color: var(--orange); text-align: right; }
 .cap-note { margin: 23px 0 0; color: #8b8b8b; font: .67rem/1.5 monospace; }
 
 .method { padding: 80px 4vw 90px; display: grid; grid-template-columns: .64fr 1fr; gap: 7vw; border-top: 1px solid var(--ink); scroll-margin-top: 20px; }
@@ -178,6 +193,7 @@ footer > div a:hover { color: var(--pink); }
   .data-state-strip { margin-inline: 20px; align-items: flex-start; flex-direction: column; gap: 4px; }
   .model-shell { margin-inline: 14px; box-shadow: 6px 6px 0 var(--pink); }
   .alpha-shell { box-shadow: 6px 6px 0 var(--acid); }
+  .buyback-shell { box-shadow: 6px 6px 0 var(--orange); }
   .model-head { padding: 14px; }
   .model-head p { display: none; }
   .subnet-chip span { display: none; }

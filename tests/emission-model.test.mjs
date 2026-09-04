@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  calculateEmissionRouting,
+  calculateMinerLiquidation,
   calculateSubnetNetValueUsd,
   calculateTaoShare,
   deriveRankGateBar,
@@ -27,6 +29,29 @@ test("subnet net value is positive when TAO injection exceeds miner emissions", 
   assert.equal(calculateSubnetNetValueUsd(250, 180), 70);
   assert.equal(calculateSubnetNetValueUsd(180, 250), -70);
   assert.equal(calculateSubnetNetValueUsd(250, 250), 0);
+});
+
+test("TAO allocation is split between price-neutral liquidity and chain buys", () => {
+  const capped = calculateEmissionRouting(10, 2, 0.25, 8);
+  assert.deepEqual(capped, {
+    alphaTarget: 5,
+    alphaCap: 2,
+    alphaIn: 2,
+    liquidityTao: 4,
+    chainBuyTao: 6,
+  });
+
+  const belowCap = calculateEmissionRouting(3, 2, 0.5, 8);
+  assert.equal(belowCap.alphaIn, 1.5);
+  assert.equal(belowCap.liquidityTao, 3);
+  assert.equal(belowCap.chainBuyTao, 0);
+  assert.equal(belowCap.liquidityTao + belowCap.chainBuyTao, 3);
+});
+
+test("miner liquidation converts all post-burn miner alpha to TAO at spot", () => {
+  const liquidation = calculateMinerLiquidation(1, 0.41, 0.25, 2);
+  assert.equal(liquidation.minerAlpha, 0.3075);
+  assert.equal(liquidation.minerTao, 0.615);
 });
 
 test("changing one subnet burn renormalizes every subnet", () => {
