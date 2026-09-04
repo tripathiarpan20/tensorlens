@@ -104,7 +104,7 @@ function shortDate(value: string) {
   }).format(new Date(value));
 }
 
-function Surface3D({
+function IsometricSurface({
   mode,
   subnets,
   gateBar,
@@ -126,8 +126,8 @@ function Surface3D({
   maxShare: number;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const dragRef = useRef<{ x: number; y: number } | null>(null);
-  const [view, setView] = useState({ yaw: -0.72, pitch: 0.92, zoom: 1 });
+  const dragRef = useRef<{ x: number; y: number; action: "rotate" | "pan" } | null>(null);
+  const [view, setView] = useState({ yaw: -Math.PI / 4, pitch: 0.9, zoom: 1, panX: 0, panY: 0 });
   const [sizeTick, setSizeTick] = useState(0);
 
   useEffect(() => {
@@ -153,7 +153,7 @@ function Surface3D({
     const h = rect.height;
     ctx.clearRect(0, 0, w, h);
 
-    const steps = 22;
+    const steps = 34;
     const values: number[][] = [];
     let minValue = Infinity;
     let maxValue = -Infinity;
@@ -167,24 +167,116 @@ function Surface3D({
       }
     }
     const span = Math.max(1e-9, maxValue - minValue);
+    const normalizedHeight = (value: number) => {
+      const normalized = Math.min(1, Math.max(0, (value - minValue) / span));
+      return Math.pow(normalized, 0.92) * 0.62;
+    };
+    const surfaceColor = (value: number) => {
+      const t = Math.min(1, Math.max(0, (value - minValue) / span));
+      const low = [67, 22, 180];
+      const middle = [255, 19, 139];
+      const high = [217, 255, 67];
+      const split = 0.72;
+      const from = t < split ? low : middle;
+      const to = t < split ? middle : high;
+      const amount = t < split ? t / split : (t - split) / (1 - split);
+      const channels = from.map((channel, index) => Math.round(channel + (to[index] - channel) * amount));
+      return `rgba(${channels[0]}, ${channels[1]}, ${channels[2]}, .82)`;
+    };
     const cy = Math.cos(view.yaw);
     const sy = Math.sin(view.yaw);
     const cp = Math.cos(view.pitch);
     const sp = Math.sin(view.pitch);
-    const project = (x: number, y: number, value: number) => {
+    const planeScale = Math.min(w * 0.66, h * 0.82) * view.zoom;
+    const project = (x: number, y: number, z = 0) => {
       const px = x - 0.5;
       const py = y - 0.5;
-      const pz = ((value - minValue) / span - 0.5) * 0.9;
       const rx = px * cy - py * sy;
       const ry = px * sy + py * cy;
-      const projectedY = ry * cp - pz * sp;
-      const depth = ry * sp + pz * cp;
+      const projectedY = ry * cp - z * sp;
+      const depth = ry * sp + z * cp;
       return {
-        x: w * 0.5 + rx * Math.min(w, h * 1.45) * 0.82 * view.zoom,
-        y: h * 0.51 + projectedY * Math.min(h, w * 0.68) * 0.76 * view.zoom,
+        x: w * 0.5 + view.panX + rx * planeScale,
+        y: h * 0.55 + view.panY + projectedY * planeScale,
         depth,
       };
     };
+
+    const drawLine = (points: ReturnType<typeof project>[]) => {
+      ctx.beginPath();
+      ctx.moveTo(points[0].x, points[0].y);
+      for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+      ctx.stroke();
+    };
+
+    const drawAxis = (
+      start: ReturnType<typeof project>,
+      end: ReturnType<typeof project>,
+      label: string,
+      color: string,
+      side: 1 | -1,
+    ) => {
+      const dx = end.x - start.x;
+      const dy = end.y - start.y;
+      const length = Math.max(1, Math.hypot(dx, dy));
+      const ux = dx / length;
+      const uy = dy / length;
+      const nx = -uy;
+      const ny = ux;
+      const arrowSize = w < 500 ? 5 : 7;
+
+      ctx.strokeStyle = color;
+      ctx.lineWidth = w < 500 ? 1.2 : 1.5;
+      drawLine([start, end]);
+      drawLine([
+        { ...end, x: end.x - ux * arrowSize + nx * arrowSize * 0.55, y: end.y - uy * arrowSize + ny * arrowSize * 0.55 },
+        end,
+        { ...end, x: end.x - ux * arrowSize - nx * arrowSize * 0.55, y: end.y - uy * arrowSize - ny * arrowSize * 0.55 },
+      ]);
+
+      let angle = Math.atan2(dy, dx);
+      if (angle > Math.PI / 2 || angle < -Math.PI / 2) angle += Math.PI;
+      const offset = w < 500 ? 11 : 15;
+      const labelX = (start.x + end.x) / 2 + nx * side * offset;
+      const labelY = (start.y + end.y) / 2 + ny * side * offset;
+      ctx.save();
+      ctx.translate(labelX, labelY);
+      ctx.rotate(angle);
+      ctx.font = `700 ${w < 500 ? 7 : 9}px monospace`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      const labelWidth = ctx.measureText(label).width;
+      ctx.fillStyle = "rgba(17,17,17,.9)";
+      ctx.fillRect(-labelWidth / 2 - 6, -7, labelWidth + 12, 14);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 0.7;
+      ctx.strokeRect(-labelWidth / 2 - 6, -7, labelWidth + 12, 14);
+      ctx.fillStyle = color;
+      ctx.fillText(label, 0, 0.5);
+      ctx.restore();
+    };
+
+    const floorZ = -0.055;
+    ctx.strokeStyle = "rgba(255,255,255,.1)";
+    ctx.lineWidth = 0.7;
+    for (let i = 0; i <= 10; i++) {
+      const position = i / 10;
+      drawLine([project(position, 0, floorZ), project(position, 1, floorZ)]);
+      drawLine([project(0, position, floorZ), project(1, position, floorZ)]);
+    }
+    const floorCorners = [
+      project(0, 0, floorZ),
+      project(1, 0, floorZ),
+      project(1, 1, floorZ),
+      project(0, 1, floorZ),
+    ];
+    ctx.strokeStyle = "rgba(255,255,255,.22)";
+    ctx.lineWidth = 1;
+    drawLine([...floorCorners, floorCorners[0]]);
+    ctx.strokeStyle = "rgba(255,255,255,.09)";
+    for (const [x, y] of [[0, 0], [1, 0], [1, 1], [0, 1]]) {
+      drawLine([project(x, y, floorZ), project(x, y, 0.68)]);
+    }
 
     const cells: Array<{
       points: ReturnType<typeof project>[];
@@ -198,10 +290,10 @@ function Surface3D({
         const y0 = yi / steps;
         const y1 = (yi + 1) / steps;
         const points = [
-          project(x0, y0, values[yi][xi]),
-          project(x1, y0, values[yi][xi + 1]),
-          project(x1, y1, values[yi + 1][xi + 1]),
-          project(x0, y1, values[yi + 1][xi]),
+          project(x0, y0, normalizedHeight(values[yi][xi])),
+          project(x1, y0, normalizedHeight(values[yi][xi + 1])),
+          project(x1, y1, normalizedHeight(values[yi + 1][xi + 1])),
+          project(x0, y1, normalizedHeight(values[yi + 1][xi])),
         ];
         cells.push({
           points,
@@ -212,25 +304,37 @@ function Surface3D({
     }
     cells.sort((a, b) => a.depth - b.depth);
     for (const cell of cells) {
-      const t = (cell.value - minValue) / span;
-      const hue = mode === "difference" ? 236 + t * 103 : mode === "alpha" ? 188 - t * 112 : 45 - t * 25;
       ctx.beginPath();
       ctx.moveTo(cell.points[0].x, cell.points[0].y);
       for (let i = 1; i < cell.points.length; i++) ctx.lineTo(cell.points[i].x, cell.points[i].y);
       ctx.closePath();
-      ctx.fillStyle = `hsla(${hue}, 88%, ${47 + t * 10}%, .78)`;
+      ctx.fillStyle = surfaceColor(cell.value);
       ctx.fill();
-      ctx.strokeStyle = "rgba(255,255,255,.08)";
-      ctx.lineWidth = 0.7;
+      ctx.strokeStyle = "rgba(255,255,255,.14)";
+      ctx.lineWidth = 0.5;
       ctx.stroke();
     }
+
+    const edgePoints = [
+      Array.from({ length: steps + 1 }, (_, index) => project(index / steps, 0, normalizedHeight(values[0][index]))),
+      Array.from({ length: steps + 1 }, (_, index) => project(1, index / steps, normalizedHeight(values[index][steps]))),
+      Array.from({ length: steps + 1 }, (_, index) => project(1 - index / steps, 1, normalizedHeight(values[steps][steps - index]))),
+      Array.from({ length: steps + 1 }, (_, index) => project(0, 1 - index / steps, normalizedHeight(values[steps - index][0]))),
+    ];
+    ctx.strokeStyle = "rgba(255,255,255,.38)";
+    ctx.lineWidth = 1.2;
+    for (const edge of edgePoints) drawLine(edge);
 
     ctx.beginPath();
     for (let i = 0; i <= 80; i++) {
       const pathBurn = i / 80;
       const pathShare = calculateTaoShare(subnets, gateBar, gateExponent, subnet.netuid, pathBurn);
       const pathValue = surfaceValue(mode, subnet, pathBurn, pathShare, taoUsdRate);
-      const point = project(pathBurn, maxShare ? pathShare / maxShare : 0, pathValue);
+      const point = project(
+        pathBurn,
+        maxShare ? pathShare / maxShare : 0,
+        normalizedHeight(pathValue) + 0.015,
+      );
       if (i === 0) ctx.moveTo(point.x, point.y);
       else ctx.lineTo(point.x, point.y);
     }
@@ -242,7 +346,11 @@ function Surface3D({
     ctx.shadowBlur = 0;
 
     const markerValue = surfaceValue(mode, subnet, burn, share, taoUsdRate);
-    const marker = project(burn, maxShare ? share / maxShare : 0, markerValue);
+    const marker = project(
+      burn,
+      maxShare ? share / maxShare : 0,
+      normalizedHeight(markerValue) + 0.022,
+    );
     ctx.beginPath();
     ctx.arc(marker.x, marker.y, 7, 0, Math.PI * 2);
     ctx.fillStyle = "#fff";
@@ -255,9 +363,37 @@ function Surface3D({
     ctx.strokeStyle = mode === "difference" ? "#ff3f91" : mode === "alpha" ? "#d9ff43" : "#ff9f43";
     ctx.lineWidth = 1;
     ctx.stroke();
+
+    const taoAxisMaximum = maxShare * 100;
+    const taoAxisLabel = `${taoAxisMaximum.toFixed(taoAxisMaximum < 1 ? 2 : 1)}%`;
+    const valueAxisLabel = mode === "difference"
+      ? "GROSS VALUE GAP"
+      : mode === "alpha" ? "ALPHA IN" : "NET BUY PRESSURE";
+    const axisFloor = floorZ - 0.012;
+    drawAxis(
+      project(0, 1, axisFloor),
+      project(1, 1, axisFloor),
+      "X · MINER BURN · 0% → 100%",
+      "#ff3f91",
+      1,
+    );
+    drawAxis(
+      project(0, 0, axisFloor),
+      project(0, 1, axisFloor),
+      `Y · TAO EMISSION · 0% → ${taoAxisLabel}`,
+      "#d9ff43",
+      1,
+    );
+    drawAxis(
+      project(0, 0, floorZ),
+      project(0, 0, 0.68),
+      `Z · ${valueAxisLabel} · LOW → HIGH`,
+      "#ffffff",
+      -1,
+    );
   }, [burn, gateBar, gateExponent, maxShare, mode, share, sizeTick, subnet, subnets, taoUsdRate, view]);
 
-  const resetView = () => setView({ yaw: -0.72, pitch: 0.92, zoom: 1 });
+  const resetView = () => setView({ yaw: -Math.PI / 4, pitch: 0.9, zoom: 1, panX: 0, panY: 0 });
 
   return (
     <div className="canvas-stage">
@@ -267,24 +403,35 @@ function Surface3D({
         role="img"
         tabIndex={0}
         aria-label={mode === "difference"
-          ? "Interactive three-dimensional gross allocation value-gap surface"
+          ? "Interactive isometric gross allocation value-gap surface. X axis is miner burn, Y axis is TAO emission, and Z axis is the modeled result."
           : mode === "alpha"
-            ? "Interactive three-dimensional capped alpha injection surface"
-            : "Interactive three-dimensional net chain-buy pressure surface"}
+            ? "Interactive isometric capped alpha injection surface. X axis is miner burn, Y axis is TAO emission, and Z axis is the modeled result."
+            : "Interactive isometric net chain-buy pressure surface. X axis is miner burn, Y axis is TAO emission, and Z axis is the modeled result."}
         onPointerDown={(event) => {
           event.currentTarget.setPointerCapture(event.pointerId);
-          dragRef.current = { x: event.clientX, y: event.clientY };
+          dragRef.current = {
+            x: event.clientX,
+            y: event.clientY,
+            action: event.shiftKey || event.button === 1 ? "pan" : "rotate",
+          };
         }}
         onPointerMove={(event) => {
           if (!dragRef.current) return;
           const dx = event.clientX - dragRef.current.x;
           const dy = event.clientY - dragRef.current.y;
-          dragRef.current = { x: event.clientX, y: event.clientY };
-          setView((current) => ({
-            ...current,
-            yaw: current.yaw + dx * 0.008,
-            pitch: Math.max(0.28, Math.min(1.35, current.pitch + dy * 0.006)),
-          }));
+          const action = dragRef.current.action;
+          dragRef.current = { x: event.clientX, y: event.clientY, action };
+          setView((current) => action === "pan"
+            ? {
+                ...current,
+                panX: Math.max(-180, Math.min(180, current.panX + dx)),
+                panY: Math.max(-150, Math.min(150, current.panY + dy)),
+              }
+            : {
+                ...current,
+                yaw: current.yaw + dx * 0.008,
+                pitch: Math.max(0.38, Math.min(1.28, current.pitch + dy * 0.006)),
+              });
         }}
         onPointerUp={() => { dragRef.current = null; }}
         onPointerCancel={() => { dragRef.current = null; }}
@@ -296,10 +443,14 @@ function Surface3D({
           }));
         }}
         onKeyDown={(event) => {
-          if (event.key === "ArrowLeft") setView((current) => ({ ...current, yaw: current.yaw - 0.08 }));
-          if (event.key === "ArrowRight") setView((current) => ({ ...current, yaw: current.yaw + 0.08 }));
-          if (event.key === "ArrowUp") setView((current) => ({ ...current, pitch: Math.max(0.28, current.pitch - 0.06) }));
-          if (event.key === "ArrowDown") setView((current) => ({ ...current, pitch: Math.min(1.35, current.pitch + 0.06) }));
+          if (event.shiftKey && event.key === "ArrowLeft") setView((current) => ({ ...current, panX: Math.max(-180, current.panX - 12) }));
+          else if (event.shiftKey && event.key === "ArrowRight") setView((current) => ({ ...current, panX: Math.min(180, current.panX + 12) }));
+          else if (event.shiftKey && event.key === "ArrowUp") setView((current) => ({ ...current, panY: Math.max(-150, current.panY - 12) }));
+          else if (event.shiftKey && event.key === "ArrowDown") setView((current) => ({ ...current, panY: Math.min(150, current.panY + 12) }));
+          else if (event.key === "ArrowLeft") setView((current) => ({ ...current, yaw: current.yaw - 0.08 }));
+          else if (event.key === "ArrowRight") setView((current) => ({ ...current, yaw: current.yaw + 0.08 }));
+          else if (event.key === "ArrowUp") setView((current) => ({ ...current, pitch: Math.max(0.38, current.pitch - 0.06) }));
+          else if (event.key === "ArrowDown") setView((current) => ({ ...current, pitch: Math.min(1.28, current.pitch + 0.06) }));
           if (event.key === "+" || event.key === "=") setView((current) => ({ ...current, zoom: Math.min(1.42, current.zoom + 0.08) }));
           if (event.key === "-") setView((current) => ({ ...current, zoom: Math.max(0.72, current.zoom - 0.08) }));
         }}
@@ -311,12 +462,10 @@ function Surface3D({
         <span className="legend-path" /> Feasible burn → emission path
         <span className="legend-point" /> Current scenario
       </div>
-      <span className="axis axis-z">{mode === "difference"
-        ? "GROSS VALUE GAP · USD/DAY"
-        : mode === "alpha" ? "α_IN · ALPHA/DAY" : "NET BUY · TAO/DAY"}</span>
-      <span className="axis axis-x">MINER BURN % →</span>
-      <span className="axis axis-y">TAO EMISSION % →</span>
-      <div className="interaction-hint">DRAG · ROTATE &nbsp; / &nbsp; SCROLL · ZOOM</div>
+      <div className={`value-key ${mode}`} aria-hidden="true">
+        <span>LOW</span><i /><span>HIGH</span>
+      </div>
+      <div className="interaction-hint">DRAG · ROTATE &nbsp; / &nbsp; SHIFT + DRAG · MOVE &nbsp; / &nbsp; SCROLL · ZOOM</div>
     </div>
   );
 }
@@ -526,7 +675,7 @@ export default function Home() {
           <a href="#chain-buys">See the real net buy/sell pressure in section 03 ↓</a>
         </div>
         <div className="workspace-grid">
-          <Surface3D
+          <IsometricSurface
             mode="difference"
             subnets={modelSubnets}
             gateBar={gateBar}
@@ -590,7 +739,7 @@ export default function Home() {
           <div className={`cap-badge ${capped ? "is-capped" : ""}`}>{capped ? "CAP BINDING" : "BELOW CAP"}</div>
         </div>
         <div className="workspace-grid">
-          <Surface3D
+          <IsometricSurface
             mode="alpha"
             subnets={modelSubnets}
             gateBar={gateBar}
@@ -634,7 +783,7 @@ export default function Home() {
           </div>
         </div>
         <div className="workspace-grid">
-          <Surface3D
+          <IsometricSurface
             mode="pressure"
             subnets={modelSubnets}
             gateBar={gateBar}
@@ -683,7 +832,7 @@ export default function Home() {
         <div className="method-intro">
           <span className="eyebrow">MODEL NOTES / 04</span>
           <h2>What the surfaces mean.</h2>
-          <p>The coloured plane shows every burn/emission combination. The white line is the subset the network can actually produce because TAO emission is a function of miner burn; the ring marks your current scenario.</p>
+          <p>Each canvas is an isometric height mesh: miner burn and TAO emission form the floor, while elevation and colour carry the relative modeled result. The white line is the subset the network can actually produce; the ring marks your current scenario.</p>
         </div>
         <div className="formula-grid">
           <article>

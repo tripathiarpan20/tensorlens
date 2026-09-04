@@ -37,6 +37,9 @@ test("server-renders the Tensor Lens emissions dashboard", async () => {
   assert.match(html, /GROSS GAP.*ACCOUNTING VIEW/i);
   assert.match(html, /Alpha injection after cap/);
   assert.match(html, /Net chain-buy pressure/);
+  assert.match(html, /isometric height mesh/i);
+  assert.match(html, /SHIFT \+ DRAG.*MOVE/i);
+  assert.match(html, /X axis is miner burn.*Y axis is TAO emission.*Z axis is the modeled result/i);
   assert.match(html, /NET CHAIN-BUY PRESSURE.*DAY/i);
   assert.match(html, /MINER LIQUIDATION.*DAY/i);
   assert.match(html, /TOTAL TAO ALLOCATION.*DAY/i);
@@ -55,7 +58,9 @@ test("ships finished metadata, data, and social preview", async () => {
     readFile(new URL("../app/emission-data.ts", import.meta.url), "utf8"),
   ]);
 
-  assert.match(page, /Surface3D/);
+  assert.match(page, /IsometricSurface/);
+  assert.match(page, /X · MINER BURN/);
+  assert.match(page, /Y · TAO EMISSION/);
   assert.match(page, /calculateTaoShare/);
   assert.match(page, /\/api\/taostats\/snapshot/);
   assert.match(layout, /openGraph/);
