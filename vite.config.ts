@@ -13,6 +13,8 @@ const hasHostingConfig = existsSync(hostingConfigUrl);
 const hostingConfig: HostingConfig = hasHostingConfig
   ? JSON.parse(readFileSync(hostingConfigUrl, "utf8"))
   : { d1: null, r2: null };
+const isVercelBuild = process.env.VERCEL === "1"
+  || process.env.NITRO_PRESET === "vercel";
 
 const SITE_CREATOR_PLACEHOLDER_DATABASE_ID =
   "00000000-0000-4000-8000-000000000000";
@@ -51,8 +53,12 @@ export default defineConfig(async () => {
   process.env.WRANGLER_LOG_PATH ??= ".wrangler/logs";
   process.env.MINIFLARE_REGISTRY_PATH ??= ".wrangler/registry";
 
-  // Wrangler snapshots its log path while the Cloudflare plugin is imported.
-  const { cloudflare } = await import("@cloudflare/vite-plugin");
+  const deploymentPlugin = isVercelBuild
+    ? (await import("nitro/vite")).nitro({ preset: "vercel" })
+    : (await import("@cloudflare/vite-plugin")).cloudflare({
+        viteEnvironment: { name: "rsc", childEnvironments: ["ssr"] },
+        config: localBindingConfig,
+      });
 
   return {
     server: isCodexSeatbeltSandbox
@@ -60,11 +66,8 @@ export default defineConfig(async () => {
       : undefined,
     plugins: [
       vinext(),
-      ...(hasHostingConfig ? [sites()] : []),
-      cloudflare({
-        viteEnvironment: { name: "rsc", childEnvironments: ["ssr"] },
-        config: localBindingConfig,
-      }),
+      ...(hasHostingConfig && !isVercelBuild ? [sites()] : []),
+      deploymentPlugin,
     ],
   };
 });
