@@ -5,6 +5,8 @@ system. Explore how miner burn changes a subnet's burn-adjusted TAO share,
 compare the daily value directed to the subnet with the alpha value earned by
 miners, and see when the root-proportion alpha injection cap binds.
 
+![alt text](image.png)
+
 ## One model, both sides of the subnet
 
 - **Subnet owners** can test how burn strategy changes TAO allocation, net
