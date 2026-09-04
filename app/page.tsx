@@ -317,7 +317,7 @@ function Slider({
 }
 
 export default function Home() {
-  const [selectedNetuid, setSelectedNetuid] = useState(4);
+  const [selectedNetuid, setSelectedNetuid] = useState(10);
   const [snapshot, setSnapshot] = useState<LiveSnapshot | null>(null);
   const modelSubnets = snapshot?.subnets ?? FALLBACK_SUBNETS;
   const enabledSubnets = useMemo(

@@ -35,6 +35,7 @@ test("server-renders the Tensor Lens emissions dashboard", async () => {
   assert.match(html, /TAO injection value.*miner alpha value after burn/i);
   assert.match(html, /NET DIFFERENCE.*SUBNET VIEW/i);
   assert.match(html, /Alpha injection after cap/);
+  assert.match(html, /value="10" selected="">SN<!-- -->10<!-- --> · <!-- -->Pareton/);
   assert.match(html, /TaoStats|TAOSTATS CONNECTION/);
   assert.match(html, /TAOSTATS CONNECTION/);
   assert.match(html, /HISTORICAL FALLBACK/);
