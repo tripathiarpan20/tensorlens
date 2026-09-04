@@ -3,8 +3,8 @@ import test from "node:test";
 
 import {
   calculateEmissionRouting,
+  calculateGrossAllocationGapUsd,
   calculateMinerLiquidation,
-  calculateSubnetNetValueUsd,
   calculateTaoShare,
   deriveRankGateBar,
 } from "../app/emission-model.ts";
@@ -25,10 +25,10 @@ function point(netuid, emaPrice, minerBurned = 0) {
   };
 }
 
-test("subnet net value is positive when TAO injection exceeds miner emissions", () => {
-  assert.equal(calculateSubnetNetValueUsd(250, 180), 70);
-  assert.equal(calculateSubnetNetValueUsd(180, 250), -70);
-  assert.equal(calculateSubnetNetValueUsd(250, 250), 0);
+test("gross allocation gap compares total TAO allocation with miner liquidation", () => {
+  assert.equal(calculateGrossAllocationGapUsd(250, 180), 70);
+  assert.equal(calculateGrossAllocationGapUsd(180, 250), -70);
+  assert.equal(calculateGrossAllocationGapUsd(250, 250), 0);
 });
 
 test("TAO allocation is split between price-neutral liquidity and chain buys", () => {

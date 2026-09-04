@@ -1,10 +1,10 @@
 import type { SubnetPoint } from "./emission-data.ts";
 
-export function calculateSubnetNetValueUsd(
-  taoInjectionUsd: number,
-  minerEmissionUsd: number,
+export function calculateGrossAllocationGapUsd(
+  taoAllocationUsd: number,
+  minerLiquidationUsd: number,
 ) {
-  return taoInjectionUsd - minerEmissionUsd;
+  return taoAllocationUsd - minerLiquidationUsd;
 }
 
 export function calculateEmissionRouting(

@@ -59,6 +59,10 @@ a { color: inherit; }
 .section-index { grid-row: 1 / 3; width: 33px; height: 33px; background: var(--acid); color: #111; display: grid; place-items: center; font: 900 .73rem monospace; }
 .model-head h2 { margin: 0; font-size: clamp(1.3rem, 2vw, 2rem); letter-spacing: -.04em; }
 .model-head p { margin: 5px 0 0; color: #858585; font: .67rem monospace; letter-spacing: .08em; text-transform: uppercase; }
+.model-clarifier { min-height: 42px; padding: 10px 24px; border-bottom: 1px solid #3b3b3b; display: flex; align-items: center; gap: 16px; color: #aaa; background: rgba(255,63,145,.08); font: .62rem/1.35 monospace; }
+.model-clarifier strong { flex: 0 0 auto; color: var(--pink); letter-spacing: .09em; }
+.model-clarifier a { margin-left: auto; color: #fff; font-weight: 700; text-underline-offset: 3px; white-space: nowrap; }
+.model-clarifier a:hover, .model-clarifier a:focus-visible { color: var(--acid); }
 .subnet-chip { display: flex; align-items: center; gap: 12px; border: 1px solid #4a4a4a; padding: 10px 13px; white-space: nowrap; }
 .subnet-chip b { color: var(--acid); font: .8rem monospace; }
 .subnet-chip span { font-weight: 800; }
@@ -179,6 +183,8 @@ footer > div a:hover { color: var(--pink); }
   .selector-band label { min-width: 0; width: 100%; }
   .workspace-grid { grid-template-columns: 1fr; }
   .control-panel { border-left: 0; border-top: 1px solid #3b3b3b; }
+  .model-clarifier { align-items: flex-start; flex-direction: column; gap: 4px; }
+  .model-clarifier a { margin-left: 0; white-space: normal; }
   .canvas-stage { min-height: 500px; }
   .provenance { grid-template-columns: 1fr; }
   .provenance > div { border-right: 0; border-bottom: 1px solid var(--ink); }
@@ -195,6 +201,7 @@ footer > div a:hover { color: var(--pink); }
   .alpha-shell { box-shadow: 6px 6px 0 var(--acid); }
   .buyback-shell { box-shadow: 6px 6px 0 var(--orange); }
   .model-head { padding: 14px; }
+  .model-clarifier { padding-inline: 14px; }
   .model-head p { display: none; }
   .subnet-chip span { display: none; }
   .canvas-stage { min-height: 405px; }

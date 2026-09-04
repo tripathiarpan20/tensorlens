@@ -31,11 +31,12 @@ test("server-renders the Tensor Lens emissions dashboard", async () => {
   const html = await response.text();
   assert.match(html, /Tensor Lens — Bittensor Emissions Lab/i);
   assert.match(html, /See where emission/);
-  assert.match(html, /Value difference surface/);
-  assert.match(html, /Total TAO allocation value.*miner alpha value after burn/i);
-  assert.match(html, /NET DIFFERENCE.*SUBNET VIEW/i);
+  assert.match(html, /Gross allocation value gap/);
+  assert.match(html, /Accounting comparison.*total TAO allocation.*miner liquidation value/i);
+  assert.match(html, /NOT NET MARKET PRESSURE/i);
+  assert.match(html, /GROSS GAP.*ACCOUNTING VIEW/i);
   assert.match(html, /Alpha injection after cap/);
-  assert.match(html, /Chain-buy surplus/);
+  assert.match(html, /Net chain-buy pressure/);
   assert.match(html, /NET CHAIN-BUY PRESSURE.*DAY/i);
   assert.match(html, /MINER LIQUIDATION.*DAY/i);
   assert.match(html, /TOTAL TAO ALLOCATION.*DAY/i);

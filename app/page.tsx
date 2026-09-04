@@ -18,8 +18,8 @@ import {
 import {
   alphaEmissionRate,
   calculateEmissionRouting,
+  calculateGrossAllocationGapUsd,
   calculateMinerLiquidation,
-  calculateSubnetNetValueUsd,
   calculateTaoShare,
   solveBurnForShare,
 } from "./emission-model";
@@ -54,7 +54,7 @@ function surfaceValue(
   }
   const minerUsd = minerLiquidation.minerTao * taoUsdRate * BLOCKS_PER_DAY;
   const taoUsd = taoPerBlock * taoUsdRate * BLOCKS_PER_DAY;
-  return calculateSubnetNetValueUsd(taoUsd, minerUsd);
+  return calculateGrossAllocationGapUsd(taoUsd, minerUsd);
 }
 
 function compactUsd(value: number) {
@@ -267,7 +267,7 @@ function Surface3D({
         role="img"
         tabIndex={0}
         aria-label={mode === "difference"
-          ? "Interactive three-dimensional net emissions value surface"
+          ? "Interactive three-dimensional gross allocation value-gap surface"
           : mode === "alpha"
             ? "Interactive three-dimensional capped alpha injection surface"
             : "Interactive three-dimensional net chain-buy pressure surface"}
@@ -312,7 +312,7 @@ function Surface3D({
         <span className="legend-point" /> Current scenario
       </div>
       <span className="axis axis-z">{mode === "difference"
-        ? "SUBNET NET · USD/DAY"
+        ? "GROSS VALUE GAP · USD/DAY"
         : mode === "alpha" ? "α_IN · ALPHA/DAY" : "NET BUY · TAO/DAY"}</span>
       <span className="axis axis-x">MINER BURN % →</span>
       <span className="axis axis-y">TAO EMISSION % →</span>
@@ -399,7 +399,7 @@ export default function Home() {
   );
   const minerUsd = minerLiquidation.minerTao * taoUsdRate * BLOCKS_PER_DAY;
   const taoUsd = taoPerBlock * taoUsdRate * BLOCKS_PER_DAY;
-  const subnetNetUsd = calculateSubnetNetValueUsd(taoUsd, minerUsd);
+  const grossAllocationGapUsd = calculateGrossAllocationGapUsd(taoUsd, minerUsd);
   const routing = calculateEmissionRouting(
     taoPerBlock,
     selectedSubnet.spotPrice,
@@ -468,9 +468,9 @@ export default function Home() {
       <nav className="nav-shell">
         <a className="wordmark" href="#top" aria-label="Tensor Lens home">TENSOR<span>LENS</span></a>
         <div className="nav-links">
-          <a href="#value-surface">Value surface</a>
+          <a href="#value-surface">Gross comparison</a>
           <a href="#alpha-surface">Alpha cap</a>
-          <a href="#chain-buys">Chain buys</a>
+          <a href="#chain-buys">Net pressure</a>
           <a href="#method">Method</a>
         </div>
         <div className="nav-meta"><span className={`pulse ${snapshot ? "" : "fallback"}`} /> FINNEY · {snapshot ? "LIVE" : "FALLBACK"}</div>
@@ -515,10 +515,15 @@ export default function Home() {
         <div className="model-head">
           <div>
             <span className="section-index">01</span>
-            <h2>Value difference surface</h2>
-            <p>Total TAO allocation value (LP + chain buy) − miner alpha value after burn · USD / day</p>
+            <h2>Gross allocation value gap</h2>
+            <p>Accounting comparison: total TAO allocation − miner liquidation value · USD / day</p>
           </div>
           <div className="subnet-chip"><b>SN{selectedSubnet.netuid}</b><span>{selectedSubnet.name}</span></div>
+        </div>
+        <div className="model-clarifier" role="note">
+          <strong>NOT NET MARKET PRESSURE</strong>
+          <span>This gross figure counts price-neutral LP TAO alongside chain buys.</span>
+          <a href="#chain-buys">See the real net buy/sell pressure in section 03 ↓</a>
         </div>
         <div className="workspace-grid">
           <Surface3D
@@ -556,17 +561,17 @@ export default function Home() {
             />
             <p className="linked-note" id="linked-note"><i /> Bidirectionally linked. Moving TAO emission solves for the miner-burn value that produces it.</p>
             <div className="scenario-result">
-              <span>NET DIFFERENCE · SUBNET VIEW</span>
-              <b className={subnetNetUsd >= 0 ? "positive" : "negative"}>{compactUsd(subnetNetUsd)}</b>
-              <small>{subnetNetUsd > 0
-                ? "Total TAO allocation leads miner value"
-                : subnetNetUsd < 0
-                  ? "Miner value leads total TAO allocation"
-                  : "Total TAO allocation and miner value are balanced"} per day</small>
+              <span>GROSS GAP · ACCOUNTING VIEW</span>
+              <b className={grossAllocationGapUsd >= 0 ? "positive" : "negative"}>{compactUsd(grossAllocationGapUsd)}</b>
+              <small>{grossAllocationGapUsd > 0
+                ? "Total TAO allocation exceeds miner liquidation"
+                : grossAllocationGapUsd < 0
+                  ? "Miner liquidation exceeds total TAO allocation"
+                  : "Total TAO allocation and miner liquidation are equal"} per day · not net price pressure</small>
             </div>
             <div className="metric-pair">
-              <div><span>MINER VALUE / DAY</span><b>{compactUsd(minerUsd)}</b></div>
-              <div><span>TOTAL TAO VALUE / DAY</span><b>{compactUsd(taoUsd)}</b></div>
+              <div><span>MINER LIQUIDATION VALUE / DAY</span><b>{compactUsd(minerUsd)}</b></div>
+              <div><span>GROSS TAO ALLOCATION VALUE / DAY</span><b>{compactUsd(taoUsd)}</b></div>
               <div><span>TAO / BLOCK</span><b>{taoPerBlock.toFixed(5)} τ</b></div>
               <div><span>EMA PRICE</span><b>{selectedSubnet.emaPrice.toFixed(6)}</b></div>
             </div>
@@ -621,7 +626,7 @@ export default function Home() {
         <div className="model-head">
           <div>
             <span className="section-index">03</span>
-            <h2>Chain-buy surplus</h2>
+            <h2>Net chain-buy pressure</h2>
             <p>Gross chain-buy TAO − 100% miner-emission liquidation · τ / day</p>
           </div>
           <div className={`cap-badge ${netBuyTaoPerBlock > 0 ? "is-buying" : netBuyTaoPerBlock < 0 ? "is-selling" : ""}`}>
@@ -692,9 +697,9 @@ export default function Home() {
             <p>Burn-adjusted demand is renormalized across every eligible subnet, passed through the fixed Hill gate, then redistributed over enabled subnets.</p>
           </article>
           <article>
-            <span>03 · VALUE GAP</span>
-            <code>Δ$ subnet = total TAO value − miner α value</code>
-            <p>Total TAO value includes both price-neutral LP injection and chain buys. Miner value uses 41% of participant alpha emission after the scenario burn.</p>
+            <span>03 · GROSS VALUE GAP</span>
+            <code>gross Δ$ = total TAO value − miner liquidation</code>
+            <p>This accounting comparison includes price-neutral LP injection, so it is explicitly not a measure of net buy or sell pressure.</p>
           </article>
           <article>
             <span>04 · ALPHA CAP</span>
@@ -702,9 +707,9 @@ export default function Home() {
             <p>The second surface shows the price-neutral injection after the protocol&apos;s root-proportion cap.</p>
           </article>
           <article>
-            <span>05 · CHAIN BUY</span>
+            <span>05 · NET PRESSURE</span>
             <code>tao_net = tao_buy − (miner α × price)</code>
-            <p>Net pressure subtracts the TAO value of 100% miner liquidation from the surplus TAO exchanged for alpha on-chain.</p>
+            <p>Section three shows the market-impact view by subtracting the TAO value of 100% miner liquidation from chain buys.</p>
           </article>
           <article>
             <span>06 · RECONCILIATION</span>
