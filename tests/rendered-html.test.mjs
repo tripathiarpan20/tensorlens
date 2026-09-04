@@ -34,6 +34,7 @@ test("server-renders the Tensor Lens emissions dashboard", async () => {
   assert.match(html, /Value difference surface/);
   assert.match(html, /Alpha injection after cap/);
   assert.match(html, /TaoStats MCP/);
+  assert.match(html, /TAOSTATS CONNECTION/);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/i);
 });
 

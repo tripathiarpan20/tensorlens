@@ -357,6 +357,9 @@ export default function Home() {
     [selectedNetuid],
   );
   const [burnPercent, setBurnPercent] = useState(selectedSubnet.minerBurned * 100);
+  const [apiKey, setApiKey] = useState("");
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [apiKeyStatus, setApiKeyStatus] = useState<"idle" | "checking" | "valid" | "invalid">("idle");
 
   useEffect(() => {
     setBurnPercent(selectedSubnet.minerBurned * 100);
@@ -381,6 +384,21 @@ export default function Home() {
   const resetScenario = () => setBurnPercent(selectedSubnet.minerBurned * 100);
   const setSharePercent = (value: number) => {
     setBurnPercent(solveBurnForShare(selectedSubnet.netuid, value / 100) * 100);
+  };
+  const verifyApiKey = async () => {
+    if (!apiKey.trim()) return;
+    setApiKeyStatus("checking");
+    try {
+      const response = await fetch("/api/taostats/validate", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ apiKey: apiKey.trim() }),
+      });
+      const result = (await response.json()) as { valid?: boolean };
+      setApiKeyStatus(response.ok && result.valid ? "valid" : "invalid");
+    } catch {
+      setApiKeyStatus("invalid");
+    }
   };
 
   return (
@@ -561,6 +579,42 @@ export default function Home() {
           <a href="https://mcp.taostats.io/" target="_blank" rel="noreferrer">TaoStats ↗</a>
         </div>
       </footer>
+
+      <aside className="api-key-dock" aria-label="TaoStats API key">
+        <div className="api-key-title">
+          <div><span className="pulse" /> TAOSTATS CONNECTION</div>
+          <small>LOCAL SESSION</small>
+        </div>
+        <label htmlFor="taostats-api-key">API key</label>
+        <div className="api-key-input">
+          <input
+            id="taostats-api-key"
+            type={showApiKey ? "text" : "password"}
+            value={apiKey}
+            onChange={(event) => {
+              setApiKey(event.target.value);
+              setApiKeyStatus("idle");
+            }}
+            placeholder="tao-••••••••:••••••••"
+            autoComplete="off"
+            spellCheck={false}
+          />
+          <button type="button" onClick={() => setShowApiKey((visible) => !visible)} aria-pressed={showApiKey}>
+            {showApiKey ? "Hide" : "Show"}
+          </button>
+        </div>
+        <div className="api-key-actions">
+          <p className={`api-key-status ${apiKeyStatus}`} aria-live="polite">
+            {apiKeyStatus === "checking" && "Checking with TaoStats…"}
+            {apiKeyStatus === "valid" && "Key valid · ready"}
+            {apiKeyStatus === "invalid" && "Key invalid or TaoStats unreachable"}
+            {apiKeyStatus === "idle" && "Held in memory only · never stored"}
+          </p>
+          <button type="button" className="verify-key" onClick={verifyApiKey} disabled={!apiKey.trim() || apiKeyStatus === "checking"}>
+            Verify
+          </button>
+        </div>
+      </aside>
     </main>
   );
 }
