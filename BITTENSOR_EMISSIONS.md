@@ -1,4 +1,4 @@
-# updated: 4th September 2026
+# Last updated: 4th September 2026 from https://www.bittensor.com/docs/concepts/emissions
 
 
 # Emissions (/docs/concepts/emissions)
