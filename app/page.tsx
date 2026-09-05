@@ -528,7 +528,7 @@ export default function Home() {
   const [burnPercent, setBurnPercent] = useState(referenceSubnet.minerBurned * 100);
   const [priceEnabled, setPriceEnabled] = useState(false);
   const [targetPriceInput, setTargetPriceInput] = useState("");
-  const [scaleEma, setScaleEma] = useState(false);
+  const [scaleEma, setScaleEma] = useState(true);
   const targetPrice = Number(targetPriceInput);
   const validTargetPrice = targetPriceInput.trim() !== "" && Number.isFinite(targetPrice) && targetPrice >= 1e-9;
   const scenarioSubnets = useMemo(
@@ -540,7 +540,7 @@ export default function Home() {
   const resetPriceScenario = () => {
     setPriceEnabled(false);
     setTargetPriceInput("");
-    setScaleEma(false);
+    setScaleEma(true);
   };
   const [apiKey, setApiKey] = useState("");
   const [showApiKey, setShowApiKey] = useState(false);
