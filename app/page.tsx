@@ -636,9 +636,9 @@ export default function Home() {
       <nav className="nav-shell">
         <a className="wordmark" href="#top" aria-label="Tensor Lens home">TENSOR<span>LENS</span></a>
         <div className="nav-links">
-          <a href="#value-surface">Gross comparison</a>
-          <a href="#alpha-surface">Alpha cap</a>
           <a href="#chain-buys">Net pressure</a>
+          <a href="#alpha-surface">Alpha cap</a>
+          <a href="#value-surface">Gross comparison</a>
           <a href="#method">Method</a>
         </div>
         <div className="nav-meta"><span className={`pulse ${snapshot ? "" : "fallback"}`} /> FINNEY · {snapshot ? "LIVE" : "FALLBACK"}</div>
@@ -714,23 +714,20 @@ export default function Home() {
         </div>}
       </section>
 
-      <section className="model-shell" id="value-surface">
+      <section className="model-shell buyback-shell" id="chain-buys">
         <div className="model-head">
           <div>
             <span className="section-index">01</span>
-            <h2>Gross allocation value gap</h2>
-            <p>Accounting comparison: total TAO allocation − miner liquidation value · USD / day</p>
+            <h2>Net chain-buy pressure</h2>
+            <p>Gross chain-buy TAO − 100% miner-emission liquidation · τ / day</p>
           </div>
-          <div className="subnet-chip"><b>SN{selectedSubnet.netuid}</b><span>{selectedSubnet.name}</span></div>
-        </div>
-        <div className="model-clarifier" role="note">
-          <strong>NOT NET MARKET PRESSURE</strong>
-          <span>This gross figure counts price-neutral LP TAO alongside chain buys.</span>
-          <a href="#chain-buys">See the real net buy/sell pressure in section 03 ↓</a>
+          <div className={`cap-badge ${netBuyTaoPerBlock > 0 ? "is-buying" : netBuyTaoPerBlock < 0 ? "is-selling" : ""}`}>
+            {netBuyTaoPerBlock > 0 ? "NET BUY PRESSURE" : netBuyTaoPerBlock < 0 ? "NET SELL PRESSURE" : "BALANCED"}
+          </div>
         </div>
         <div className="workspace-grid">
           <IsometricSurface
-            mode="difference"
+            mode="pressure"
             subnets={scenarioSubnets}
             gateBar={gateBar}
             gateExponent={gateExponent}
@@ -740,8 +737,8 @@ export default function Home() {
             share={taoShare}
             maxShare={maxShare}
           />
-          <aside className="control-panel">
-            <div className="control-title"><span>LINKED SCENARIO</span><b>01</b></div>
+          <aside className="control-panel buyback-panel">
+            <div className="control-title"><span>EMISSION ROUTING</span><b>01</b></div>
             <Slider
               label="Miner burn"
               value={burnPercent}
@@ -750,7 +747,7 @@ export default function Home() {
               max={100}
               step={0.1}
               onChange={setBurnPercent}
-              describedBy="linked-note"
+              describedBy="linked-note-pressure"
             />
             <Slider
               label="TAO emission"
@@ -760,25 +757,37 @@ export default function Home() {
               max={maxSharePercent}
               step={Math.max(0.001, maxSharePercent / 500)}
               onChange={setSharePercent}
-              describedBy="linked-note"
+              describedBy="linked-note-pressure"
             />
-            <p className="linked-note" id="linked-note"><i /> Bidirectionally linked. Moving TAO emission solves for the miner-burn value that produces it.</p>
-            <div className="scenario-result">
-              <span>GROSS GAP · ACCOUNTING VIEW</span>
-              <b className={grossAllocationGapUsd >= 0 ? "positive" : "negative"}>{compactUsd(grossAllocationGapUsd)}</b>
-              <small>{grossAllocationGapUsd > 0
-                ? "Total TAO allocation exceeds miner liquidation"
-                : grossAllocationGapUsd < 0
-                  ? "Miner liquidation exceeds total TAO allocation"
-                  : "Total TAO allocation and miner liquidation are equal"} per day · not net price pressure</small>
+            <p className="linked-note" id="linked-note-pressure"><i /> Synced with section 03. Moving TAO emission solves for the miner-burn value that produces it.</p>
+            <div className="alpha-result chain-buy-result">
+              <span>NET CHAIN-BUY PRESSURE / DAY</span>
+              <div className={`chain-buy-result-values ${netBuyTaoPerDay >= 0 ? "positive" : "negative"}`}>
+                <b>{compactSignedTao(netBuyTaoPerDay)}</b>
+                <strong>{compactUsd(netBuyUsdPerDay)}</strong>
+              </div>
+              <small>Gross chain buys − 100% miner liquidation · {netBuyTaoPerBlock.toFixed(5)} τ / block</small>
+            </div>
+            <div
+              className="routing-meter"
+              aria-label={`${((1 - chainBuyShare) * 100).toFixed(1)} percent to liquidity pool and ${(chainBuyShare * 100).toFixed(1)} percent to chain buys`}
+            >
+              <span className="routing-lp" style={{ width: `${(1 - chainBuyShare) * 100}%` }} />
+              <span className="routing-buy" style={{ width: `${chainBuyShare * 100}%` }} />
+            </div>
+            <div className="routing-labels" aria-hidden="true">
+              <span>LP {((1 - chainBuyShare) * 100).toFixed(1)}%</span>
+              <span>CHAIN BUY {(chainBuyShare * 100).toFixed(1)}%</span>
             </div>
             <div className="metric-pair">
-              <div><span>MINER LIQUIDATION VALUE / DAY</span><b>{compactUsd(minerUsd)}</b></div>
-              <div><span>GROSS TAO ALLOCATION VALUE / DAY</span><b>{compactUsd(taoUsd)}</b></div>
-              <div><span>TAO / BLOCK</span><b>{taoPerBlock.toFixed(5)} τ</b></div>
-              <div><span>{priceEnabled && validTargetPrice && scaleEma ? "SCENARIO EMA PRICE" : "EMA PRICE"}</span><b>{selectedSubnet.emaPrice.toFixed(6)}</b></div>
+              <div><span>GROSS CHAIN BUY / DAY</span><b>{compactTao(chainBuyTaoPerDay)}</b></div>
+              <div><span>MINER LIQUIDATION / DAY</span><b>{compactLiquidationTao(minerLiquidationTaoPerDay)}</b></div>
+              <div><span>GROSS CHAIN BUY VALUE / DAY</span><b>{compactUsd(chainBuyUsdPerDay)}</b></div>
+              <div><span>MINER LIQUIDATION VALUE / DAY</span><b>{compactLiquidationUsd(minerUsd)}</b></div>
+              <div><span>TOTAL TAO ALLOCATION / DAY</span><b>{compactTao(totalTaoPerDay)}</b></div>
+              <div><span>PRICE-NEUTRAL LP TAO / DAY</span><b>{compactTao(liquidityTaoPerDay)}</b></div>
             </div>
-            <button className="reset-scenario" type="button" onClick={resetScenario}>Reset to reference burn ↗</button>
+            <p className="cap-note">The LP portion is paired with newly minted α_in. Net pressure assumes miners immediately liquidate 100% of their post-burn alpha emission at the displayed spot price.</p>
           </aside>
         </div>
       </section>
@@ -825,20 +834,23 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="model-shell buyback-shell" id="chain-buys">
+      <section className="model-shell" id="value-surface">
         <div className="model-head">
           <div>
             <span className="section-index">03</span>
-            <h2>Net chain-buy pressure</h2>
-            <p>Gross chain-buy TAO − 100% miner-emission liquidation · τ / day</p>
+            <h2>Gross allocation value gap</h2>
+            <p>Accounting comparison: total TAO allocation − miner liquidation value · USD / day</p>
           </div>
-          <div className={`cap-badge ${netBuyTaoPerBlock > 0 ? "is-buying" : netBuyTaoPerBlock < 0 ? "is-selling" : ""}`}>
-            {netBuyTaoPerBlock > 0 ? "NET BUY PRESSURE" : netBuyTaoPerBlock < 0 ? "NET SELL PRESSURE" : "BALANCED"}
-          </div>
+          <div className="subnet-chip"><b>SN{selectedSubnet.netuid}</b><span>{selectedSubnet.name}</span></div>
+        </div>
+        <div className="model-clarifier" role="note">
+          <strong>NOT NET MARKET PRESSURE</strong>
+          <span>This gross figure counts price-neutral LP TAO alongside chain buys.</span>
+          <a href="#chain-buys">See the real net buy/sell pressure in section 01 ↑</a>
         </div>
         <div className="workspace-grid">
           <IsometricSurface
-            mode="pressure"
+            mode="difference"
             subnets={scenarioSubnets}
             gateBar={gateBar}
             gateExponent={gateExponent}
@@ -848,36 +860,45 @@ export default function Home() {
             share={taoShare}
             maxShare={maxShare}
           />
-          <aside className="control-panel buyback-panel">
-            <div className="control-title"><span>EMISSION ROUTING</span><b>03</b></div>
-            <div className="alpha-result chain-buy-result">
-              <span>NET CHAIN-BUY PRESSURE / DAY</span>
-              <div className={`chain-buy-result-values ${netBuyTaoPerDay >= 0 ? "positive" : "negative"}`}>
-                <b>{compactSignedTao(netBuyTaoPerDay)}</b>
-                <strong>{compactUsd(netBuyUsdPerDay)}</strong>
-              </div>
-              <small>Gross chain buys − 100% miner liquidation · {netBuyTaoPerBlock.toFixed(5)} τ / block</small>
-            </div>
-            <div
-              className="routing-meter"
-              aria-label={`${((1 - chainBuyShare) * 100).toFixed(1)} percent to liquidity pool and ${(chainBuyShare * 100).toFixed(1)} percent to chain buys`}
-            >
-              <span className="routing-lp" style={{ width: `${(1 - chainBuyShare) * 100}%` }} />
-              <span className="routing-buy" style={{ width: `${chainBuyShare * 100}%` }} />
-            </div>
-            <div className="routing-labels" aria-hidden="true">
-              <span>LP {((1 - chainBuyShare) * 100).toFixed(1)}%</span>
-              <span>CHAIN BUY {(chainBuyShare * 100).toFixed(1)}%</span>
+          <aside className="control-panel">
+            <div className="control-title"><span>LINKED SCENARIO</span><b>03</b></div>
+            <Slider
+              label="Miner burn"
+              value={burnPercent}
+              display={`${burnPercent.toFixed(1)}%`}
+              min={0}
+              max={100}
+              step={0.1}
+              onChange={setBurnPercent}
+              describedBy="linked-note"
+            />
+            <Slider
+              label="TAO emission"
+              value={sharePercent}
+              display={`${sharePercent.toFixed(3)}%`}
+              min={0}
+              max={maxSharePercent}
+              step={Math.max(0.001, maxSharePercent / 500)}
+              onChange={setSharePercent}
+              describedBy="linked-note"
+            />
+            <p className="linked-note" id="linked-note"><i /> Bidirectionally linked. Moving TAO emission solves for the miner-burn value that produces it.</p>
+            <div className="scenario-result">
+              <span>GROSS GAP · ACCOUNTING VIEW</span>
+              <b className={grossAllocationGapUsd >= 0 ? "positive" : "negative"}>{compactUsd(grossAllocationGapUsd)}</b>
+              <small>{grossAllocationGapUsd > 0
+                ? "Total TAO allocation exceeds miner liquidation"
+                : grossAllocationGapUsd < 0
+                  ? "Miner liquidation exceeds total TAO allocation"
+                  : "Total TAO allocation and miner liquidation are equal"} per day · not net price pressure</small>
             </div>
             <div className="metric-pair">
-              <div><span>GROSS CHAIN BUY / DAY</span><b>{compactTao(chainBuyTaoPerDay)}</b></div>
-              <div><span>MINER LIQUIDATION / DAY</span><b>{compactLiquidationTao(minerLiquidationTaoPerDay)}</b></div>
-              <div><span>GROSS CHAIN BUY VALUE / DAY</span><b>{compactUsd(chainBuyUsdPerDay)}</b></div>
-              <div><span>MINER LIQUIDATION VALUE / DAY</span><b>{compactLiquidationUsd(minerUsd)}</b></div>
-              <div><span>TOTAL TAO ALLOCATION / DAY</span><b>{compactTao(totalTaoPerDay)}</b></div>
-              <div><span>PRICE-NEUTRAL LP TAO / DAY</span><b>{compactTao(liquidityTaoPerDay)}</b></div>
+              <div><span>MINER LIQUIDATION VALUE / DAY</span><b>{compactUsd(minerUsd)}</b></div>
+              <div><span>GROSS TAO ALLOCATION VALUE / DAY</span><b>{compactUsd(taoUsd)}</b></div>
+              <div><span>TAO / BLOCK</span><b>{taoPerBlock.toFixed(5)} τ</b></div>
+              <div><span>{priceEnabled && validTargetPrice && scaleEma ? "SCENARIO EMA PRICE" : "EMA PRICE"}</span><b>{selectedSubnet.emaPrice.toFixed(6)}</b></div>
             </div>
-            <p className="cap-note">The LP portion is paired with newly minted α_in. Net pressure assumes miners immediately liquidate 100% of their post-burn alpha emission at the displayed spot price.</p>
+            <button className="reset-scenario" type="button" onClick={resetScenario}>Reset to reference burn ↗</button>
           </aside>
         </div>
       </section>
@@ -912,12 +933,12 @@ export default function Home() {
           <article>
             <span>05 · NET PRESSURE</span>
             <code>tao_net = tao_buy − (miner α × price)</code>
-            <p>Section three shows the market-impact view by subtracting the TAO value of 100% miner liquidation from chain buys.</p>
+            <p>Section one shows the market-impact view by subtracting the TAO value of 100% miner liquidation from chain buys.</p>
           </article>
           <article>
             <span>06 · RECONCILIATION</span>
             <code>tao_alloc = tao_LP + tao_buy</code>
-            <p>The total TAO value in section one contains both routes; section three isolates only the chain-buy surplus.</p>
+            <p>The total TAO value in section three contains both routes; section one isolates only the chain-buy surplus.</p>
           </article>
         </div>
       </section>
