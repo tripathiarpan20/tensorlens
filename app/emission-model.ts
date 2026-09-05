@@ -1,5 +1,22 @@
 import type { SubnetPoint } from "./emission-data.ts";
 
+// An explicit sensitivity assumption, not a forecast of EMA convergence.
+export function applyAlphaPriceScenario(
+  subnets: SubnetPoint[],
+  netuid: number,
+  targetPrice: number | null,
+  scaleEma = false,
+) {
+  if (targetPrice === null || !Number.isFinite(targetPrice) || targetPrice < 1e-9) return subnets;
+  return subnets.map((subnet) => subnet.netuid === netuid ? {
+    ...subnet,
+    spotPrice: targetPrice,
+    emaPrice: scaleEma && subnet.spotPrice > 0
+      ? subnet.emaPrice * (targetPrice / subnet.spotPrice)
+      : subnet.emaPrice,
+  } : subnet);
+}
+
 export function calculateGrossAllocationGapUsd(
   taoAllocationUsd: number,
   minerLiquidationUsd: number,

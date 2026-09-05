@@ -17,6 +17,7 @@ import {
 } from "./emission-data";
 import {
   alphaEmissionRate,
+  applyAlphaPriceScenario,
   calculateEmissionRouting,
   calculateGrossAllocationGapUsd,
   calculateMinerLiquidation,
@@ -518,22 +519,38 @@ export default function Home() {
   const gateBar = snapshot?.gateBar ?? FALLBACK_GATE_BAR;
   const gateExponent = snapshot?.gateExponent ?? FALLBACK_GATE_EXPONENT;
   const taoUsdRate = snapshot?.taoUsd ?? FALLBACK_TAO_USD;
-  const selectedSubnet = useMemo(
+  const referenceSubnet = useMemo(
     () => modelSubnets.find((subnet) => subnet.netuid === selectedNetuid)
       ?? enabledSubnets[0]
       ?? modelSubnets[0],
     [enabledSubnets, modelSubnets, selectedNetuid],
   );
-  const [burnPercent, setBurnPercent] = useState(selectedSubnet.minerBurned * 100);
+  const [burnPercent, setBurnPercent] = useState(referenceSubnet.minerBurned * 100);
+  const [priceEnabled, setPriceEnabled] = useState(false);
+  const [targetPriceInput, setTargetPriceInput] = useState("");
+  const [scaleEma, setScaleEma] = useState(false);
+  const targetPrice = Number(targetPriceInput);
+  const validTargetPrice = targetPriceInput.trim() !== "" && Number.isFinite(targetPrice) && targetPrice >= 1e-9;
+  const scenarioSubnets = useMemo(
+    () => applyAlphaPriceScenario(modelSubnets, referenceSubnet.netuid,
+      priceEnabled && validTargetPrice ? targetPrice : null, scaleEma),
+    [modelSubnets, referenceSubnet.netuid, priceEnabled, validTargetPrice, targetPrice, scaleEma],
+  );
+  const selectedSubnet = scenarioSubnets.find((subnet) => subnet.netuid === referenceSubnet.netuid)!;
+  const resetPriceScenario = () => {
+    setPriceEnabled(false);
+    setTargetPriceInput("");
+    setScaleEma(false);
+  };
   const [apiKey, setApiKey] = useState("");
   const [showApiKey, setShowApiKey] = useState(false);
   const [apiKeyStatus, setApiKeyStatus] = useState<"idle" | "loading" | "live" | "invalid">("idle");
   const [apiKeyMessage, setApiKeyMessage] = useState("");
 
   const burn = burnPercent / 100;
-  const taoShare = calculateTaoShare(modelSubnets, gateBar, gateExponent, selectedSubnet.netuid, burn);
+  const taoShare = calculateTaoShare(scenarioSubnets, gateBar, gateExponent, selectedSubnet.netuid, burn);
   const maxShare = Math.max(
-    calculateTaoShare(modelSubnets, gateBar, gateExponent, selectedSubnet.netuid, 0),
+    calculateTaoShare(scenarioSubnets, gateBar, gateExponent, selectedSubnet.netuid, 0),
     0.0001,
   );
   const sharePercent = taoShare * 100;
@@ -575,12 +592,13 @@ export default function Home() {
   const selectSubnet = (nextNetuid: number) => {
     const nextSubnet = modelSubnets.find((subnet) => subnet.netuid === nextNetuid);
     if (!nextSubnet) return;
+    resetPriceScenario();
     setSelectedNetuid(nextNetuid);
     setBurnPercent(nextSubnet.minerBurned * 100);
   };
   const setSharePercent = (value: number) => {
     setBurnPercent(
-      solveBurnForShare(modelSubnets, gateBar, gateExponent, selectedSubnet.netuid, value / 100) * 100,
+      solveBurnForShare(scenarioSubnets, gateBar, gateExponent, selectedSubnet.netuid, value / 100) * 100,
     );
   };
   const loadLiveSnapshot = async () => {
@@ -597,6 +615,7 @@ export default function Home() {
       if (!response.ok || !Array.isArray(result.subnets) || !result.subnets.length) {
         throw new Error(result.error ?? "TaoStats returned an invalid snapshot.");
       }
+      resetPriceScenario();
       setSnapshot(result);
       const nextSubnet = result.subnets.find(
         (subnet) => subnet.netuid === selectedNetuid && subnet.emissionEnabled,
@@ -660,6 +679,41 @@ export default function Home() {
         </label>
       </section>
 
+      <section className="price-scenario" aria-label="Alpha price scenario">
+        <label className="price-toggle">
+          <input type="checkbox" checked={priceEnabled} aria-controls="price-scenario-controls"
+            onChange={(event) => {
+              setPriceEnabled(event.target.checked);
+              if (event.target.checked && !validTargetPrice) setTargetPriceInput(String(referenceSubnet.spotPrice));
+            }} />
+          Model target alpha price
+        </label>
+        <p>Explore a target price, then lower miner burn in section 01 and compare all three sections.</p>
+        {priceEnabled && <div id="price-scenario-controls" className="price-scenario-controls">
+          <label className="price-field" htmlFor="target-alpha-price">
+            Target alpha price · τ / α
+            <input id="target-alpha-price" type="number" min="0.000000001" step="any"
+              value={targetPriceInput} onChange={(event) => setTargetPriceInput(event.target.value)}
+              aria-invalid={!validTargetPrice} aria-describedby="price-scenario-status price-assumption" />
+          </label>
+          <div className="price-reference" id="price-scenario-status" role="status">
+            <span>Reference {referenceSubnet.spotPrice.toFixed(6)} τ / α</span>
+            <b>{validTargetPrice
+              ? `Target $${(targetPrice * taoUsdRate).toFixed(4)} / α`
+              : "Enter a price of at least 0.000000001 τ / α. Reference price is in use."}</b>
+          </div>
+          <label className="price-toggle price-ema-toggle">
+            <input type="checkbox" checked={scaleEma} onChange={(event) => setScaleEma(event.target.checked)} />
+            Scale EMA demand price by the same percentage
+          </label>
+          <p id="price-assumption">{scaleEma
+            ? "Hypothetical EMA scaling changes network allocation and the linked burn curve; it does not predict when EMA catches up."
+            : "Spot-only scenario: EMA demand and the burn-to-TAO allocation curve stay fixed. Liquidation value and injection routing use the target price."}
+            {" "}Other subnets, root proportion, supply and the loaded gate midpoint stay fixed. All three sections use this scenario.</p>
+          <button type="button" className="price-reset" onClick={resetPriceScenario}>Reset to reference price</button>
+        </div>}
+      </section>
+
       <section className="model-shell" id="value-surface">
         <div className="model-head">
           <div>
@@ -677,7 +731,7 @@ export default function Home() {
         <div className="workspace-grid">
           <IsometricSurface
             mode="difference"
-            subnets={modelSubnets}
+            subnets={scenarioSubnets}
             gateBar={gateBar}
             gateExponent={gateExponent}
             taoUsdRate={taoUsdRate}
@@ -722,7 +776,7 @@ export default function Home() {
               <div><span>MINER LIQUIDATION VALUE / DAY</span><b>{compactUsd(minerUsd)}</b></div>
               <div><span>GROSS TAO ALLOCATION VALUE / DAY</span><b>{compactUsd(taoUsd)}</b></div>
               <div><span>TAO / BLOCK</span><b>{taoPerBlock.toFixed(5)} τ</b></div>
-              <div><span>EMA PRICE</span><b>{selectedSubnet.emaPrice.toFixed(6)}</b></div>
+              <div><span>{priceEnabled && validTargetPrice && scaleEma ? "SCENARIO EMA PRICE" : "EMA PRICE"}</span><b>{selectedSubnet.emaPrice.toFixed(6)}</b></div>
             </div>
             <button className="reset-scenario" type="button" onClick={resetScenario}>Reset to reference burn ↗</button>
           </aside>
@@ -741,7 +795,7 @@ export default function Home() {
         <div className="workspace-grid">
           <IsometricSurface
             mode="alpha"
-            subnets={modelSubnets}
+            subnets={scenarioSubnets}
             gateBar={gateBar}
             gateExponent={gateExponent}
             taoUsdRate={taoUsdRate}
@@ -764,7 +818,7 @@ export default function Home() {
               <div><span>PRICE-NEUTRAL TARGET</span><b>{alphaBeforeCap.toFixed(5)} α</b></div>
               <div><span>INJECTION CAP</span><b>{alphaCap.toFixed(5)} α</b></div>
               <div><span>ROOT PROPORTION</span><b>{(selectedSubnet.rootProportion * 100).toFixed(2)}%</b></div>
-              <div><span>SPOT PRICE</span><b>{selectedSubnet.spotPrice.toFixed(6)} τ/α</b></div>
+              <div><span>{priceEnabled && validTargetPrice ? "TARGET SPOT PRICE" : "SPOT PRICE"}</span><b>{selectedSubnet.spotPrice.toFixed(6)} τ/α</b></div>
             </div>
             <p className="cap-note">{capped ? "Excess TAO is routed to protocol buybacks rather than liquidity injection." : "TAO injection remains price-neutral because the root-proportion cap is not reached."}</p>
           </aside>
@@ -785,7 +839,7 @@ export default function Home() {
         <div className="workspace-grid">
           <IsometricSurface
             mode="pressure"
-            subnets={modelSubnets}
+            subnets={scenarioSubnets}
             gateBar={gateBar}
             gateExponent={gateExponent}
             taoUsdRate={taoUsdRate}
@@ -877,7 +931,7 @@ export default function Home() {
         <div>
           <span>EMA + BURN BASELINE</span>
           <b>{snapshot ? "Same-request TaoStats inputs" : "Historical reference inputs"}</b>
-          <small>{snapshot ? `${modelSubnets.length} eligible subnets · scenario overrides only the selected burn` : `${shortDate(FALLBACK_EMA_CAPTURE)} · connect a key to replace this fallback`}</small>
+          <small>{snapshot ? `${modelSubnets.length} eligible subnets · scenario overrides the selected burn and optional alpha price` : `${shortDate(FALLBACK_EMA_CAPTURE)} · connect a key to replace this fallback`}</small>
         </div>
         <div>
           <span>MODEL SOURCE</span>

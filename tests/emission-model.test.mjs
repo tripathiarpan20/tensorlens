@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  applyAlphaPriceScenario,
+  solveBurnForShare,
   calculateEmissionRouting,
   calculateGrossAllocationGapUsd,
   calculateMinerLiquidation,
@@ -125,4 +127,45 @@ test("TaoStats records become one normalized live model snapshot", () => {
   assert.equal(snapshot.blockMin, 100);
   assert.equal(snapshot.blockMax, 102);
   assert.ok(snapshot.gateBar > 0);
+});
+
+
+test("spot price scenarios update routing and liquidation without changing demand or the snapshot", () => {
+  const subnets = [point(1, 0.6, 0.3), point(2, 0.4)];
+  const scenario = applyAlphaPriceScenario(subnets, 1, 0.2);
+  assert.equal(scenario[0].spotPrice, 0.2);
+  assert.equal(scenario[0].emaPrice, subnets[0].emaPrice);
+  assert.equal(scenario[1], subnets[1]);
+  assert.equal(subnets[0].spotPrice, 0.1);
+  const share = calculateTaoShare(subnets, 0.1, 3, 1, 0.3);
+  assert.equal(calculateTaoShare(scenario, 0.1, 3, 1, 0.3), share);
+  const before = calculateEmissionRouting(0.03, 0.1, 0.2, 1);
+  const after = calculateEmissionRouting(0.03, scenario[0].spotPrice, 0.2, 1);
+  assert.ok(after.alphaIn < before.alphaIn);
+  assert.ok(after.chainBuyTao < before.chainBuyTao);
+  const minerBefore = calculateMinerLiquidation(1, 0.41, 0.3, 0.1).minerTao;
+  const minerAfter = calculateMinerLiquidation(1, 0.41, 0.3, scenario[0].spotPrice).minerTao;
+  assert.equal(minerAfter, minerBefore * 2);
+  assert.ok(calculateGrossAllocationGapUsd(0.03, minerAfter) < calculateGrossAllocationGapUsd(0.03, minerBefore));
+});
+
+test("optional EMA scaling renormalizes allocation and preserves inverse burn solving at a fixed gate", () => {
+  const subnets = [point(1, 0.6, 0.3), point(2, 0.4)];
+  const gate = deriveRankGateBar(subnets, 2);
+  const scenario = applyAlphaPriceScenario(subnets, 1, 0.2, true);
+  assert.equal(scenario[0].emaPrice, 1.2);
+  assert.equal(scenario[1], subnets[1]);
+  const share = calculateTaoShare(scenario, gate, 3, 1, 0.3);
+  assert.ok(share > calculateTaoShare(subnets, gate, 3, 1, 0.3));
+  assert.ok(Math.abs(solveBurnForShare(scenario, gate, 3, 1, share) - 0.3) < 1e-10);
+  const lowerBurnShare = calculateTaoShare(scenario, gate, 3, 1, 0.1);
+  assert.ok(lowerBurnShare > share);
+});
+
+test("disabled, invalid and reference-price scenarios preserve baseline inputs", () => {
+  const subnets = [point(1, 0.6), point(2, 0.4)];
+  for (const price of [null, NaN, Infinity, -1, 0, 1e-12]) {
+    assert.equal(applyAlphaPriceScenario(subnets, 1, price, true), subnets);
+  }
+  assert.deepEqual(applyAlphaPriceScenario(subnets, 1, 0.1, true), subnets);
 });
